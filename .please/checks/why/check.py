@@ -126,7 +126,7 @@ def check(root):
     errors += decision_errors
     for identifier, requirement in requirements.items():
         for reference in requirement.get("decisions", []):
-            if reference not in decisions:
+            if ":" not in reference and reference not in decisions:
                 errors.append(f"{identifier}: unknown decision {reference}")
     for identifier, decision in decisions.items():
         for reference in decision.get("supersedes", []):

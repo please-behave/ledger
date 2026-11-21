@@ -48,9 +48,9 @@
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "pattern": "^DEC-[0-9]{4}$"
+        "pattern": "^([a-z][a-z0-9-]*:)?DEC-[0-9]{4}$"
       },
-      "description": "Decisions that shaped this requirement. Omit the property when no significant choice stands behind the requirement."
+      "description": "Decisions that shaped this requirement, optionally qualified with the repository that holds them, as in `why:DEC-0002`. Omit the property when no significant choice stands behind the requirement."
     },
     "obsolete": {
       "type": "boolean",

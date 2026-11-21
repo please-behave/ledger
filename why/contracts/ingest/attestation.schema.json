@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Attestation envelope",
+  "description": "The canonical ingest document: an attestation together with its authenticated sender.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sender", "attestation"],
+  "properties": {
+    "sender": {
+      "type": "string",
+      "description": "The authenticated sender, set by the gateway."
+    },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "repository", "commit", "execution_points", "overall", "results"],
+      "properties": {
+        "schema_version": { "type": "integer" },
+        "repository": { "type": "string" },
+        "commit": { "type": "string" },
+        "execution_points": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "overall": { "enum": ["PASS", "FAIL", "ERROR"] },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "kind", "status"],
+            "properties": {
+              "id": { "type": "string" },
+              "kind": { "enum": ["check", "review", "integrity"] },
+              "status": { "enum": ["PASS", "FAIL", "ERROR", "NOT_RUN", "WARN"] }
+            }
+          }
+        }
+      }
+    }
+  }
+}

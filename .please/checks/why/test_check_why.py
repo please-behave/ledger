@@ -177,6 +177,19 @@ class RepositoryTests(unittest.TestCase):
         self.write_requirement(decisions=["DEC-0001"])
         self.assertEqual(self.errors(), [])
 
+    def test_a_requirement_can_cite_a_decision_of_another_repository_without_resolving_it(self):
+        self.write_requirement(decisions=["why:DEC-0002"])
+        self.assertEqual(self.errors(), [])
+
+    def test_a_decision_reference_accepts_only_a_plain_repository_qualifier(self):
+        for reference in ["why:", ":DEC-0002", "Why:DEC-0002", "a:b:DEC-0002", "why:DEC-2"]:
+            self.write_requirement(decisions=[reference])
+            self.assertTrue(any("decisions[0]" in error for error in self.errors()), reference)
+
+    def test_a_decision_cannot_supersede_a_decision_of_another_repository(self):
+        self.write_decision(supersedes=["why:DEC-0002"])
+        self.assertTrue(any("supersedes[0]" in error for error in self.errors()))
+
 
 class ExitTests(unittest.TestCase):
     def run_check(self, root):

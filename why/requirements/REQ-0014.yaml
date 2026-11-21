@@ -1,0 +1,7 @@
+id: REQ-0014
+name: Time-ordered Identifiers
+description: >-
+  The ledger must identify each attestation with a version 7 UUID generated on
+  receipt, so that later attestations have greater identifiers.
+rationale: >-
+  Readers can order and page through attestations by identifier alone.

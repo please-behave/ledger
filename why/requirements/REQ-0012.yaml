@@ -1,0 +1,6 @@
+id: REQ-0012
+name: Atomic Ingest
+description: >-
+  The ledger must store an attestation and its results together or not at all.
+rationale: >-
+  An attestation without all of its results would misstate what was verified.

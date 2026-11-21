@@ -1,0 +1,9 @@
+id: REQ-0011
+name: Invalid Ingest Rejected
+description: >-
+  `POST /v0/attestations` must answer with `400` and store nothing when the
+  body is not a valid envelope, contains an unknown field or violates a
+  database constraint.
+rationale: >-
+  A malformed report must never become evidence that readers later have to
+  interpret.

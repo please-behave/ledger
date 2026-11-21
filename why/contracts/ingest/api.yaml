@@ -1,0 +1,14 @@
+id: API-0001
+name: Ingest
+version: 0
+contracts:
+  - id: CON-0001
+    name: Attestation Envelope
+    document: attestation.md
+    schema: attestation.schema.json
+    requirements:
+      - REQ-0010
+      - REQ-0011
+      - REQ-0012
+      - REQ-0013
+      - REQ-0014

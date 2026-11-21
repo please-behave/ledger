@@ -76,3 +76,26 @@ pub fn get_status(address: SocketAddr, path: &str) -> u16 {
         .and_then(|status| status.parse().ok())
         .expect("the response has a status line")
 }
+
+pub fn post(address: SocketAddr, path: &str, body: &str) -> (u16, String) {
+    let mut stream = TcpStream::connect(address).expect("connect to the service");
+    write!(
+        stream,
+        "POST {path} HTTP/1.1\r\nHost: ledger\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    )
+    .expect("send the request");
+    let mut response = String::new();
+    stream
+        .read_to_string(&mut response)
+        .expect("read the response");
+    let status = response
+        .split_whitespace()
+        .nth(1)
+        .and_then(|status| status.parse().ok())
+        .expect("the response has a status line");
+    let body = response
+        .split_once("\r\n\r\n")
+        .map_or_else(String::new, |(_, body)| body.to_string());
+    (status, body)
+}

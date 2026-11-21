@@ -1,0 +1,10 @@
+id: REQ-0013
+name: Evidence Stored as Received
+description: >-
+  The ledger must store the received envelope unchanged as JSON together with
+  the attestation.
+rationale: >-
+  What was reported at the time must stay retrievable even after the ledger's
+  own columns evolve.
+decisions:
+  - why:DEC-0002
