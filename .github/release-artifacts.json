@@ -1,0 +1,9 @@
+{
+  "root": "dist",
+  "targets": {
+    "linux-amd64": [
+      "ledger.tar",
+      "metadata.json"
+    ]
+  }
+}

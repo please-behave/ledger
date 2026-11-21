@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Release a patch version even if no commit would raise the version, to test the release process
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+env:
+  MISE_AUTO_INSTALL: 'false' # Keep release jobs limited to their explicit tool subsets.
+
+jobs:
+  plan:
+    name: Plan
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    uses: christianpflugradt/please-behave-governance/.github/workflows/release-plan.yml@37f51cdb732dd9193a8b803ec1ddd5e415ee6daf # updates/workflows/release
+    with:
+      force: ${{ inputs.force }}
+
+  release-readiness:
+    name: Release Readiness
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    permissions:
+      contents: read
+      actions: read
+    uses: christianpflugradt/please-behave-governance/.github/workflows/release-readiness.yml@37f51cdb732dd9193a8b803ec1ddd5e415ee6daf # updates/workflows/release
+    with:
+      source-sha: ${{ needs.plan.outputs.source_sha }}
+      required-jobs: check / Check
+
+  release-candidate:
+    name: Release Candidate
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EXPECTED_RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.plan.outputs.source_sha }}
+          persist-credentials: false
+      - name: Install project tools
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          install_args: python rust github:please-behave/cli
+      - name: Build candidate image
+        run: >-
+          docker build
+          --platform linux/amd64
+          --tag ledger:candidate
+          --label "org.opencontainers.image.version=v${EXPECTED_RELEASE_VERSION}"
+          --label "org.opencontainers.image.revision=${GITHUB_SHA}"
+          .
+      - name: Validate candidate
+        uses: christianpflugradt/please-behave-governance/actions/release/governance@300b4dfcbb9347e7a5d389d85e541e193bf9de14 # updates/actions/release
+        with:
+          target: linux-amd64
+      - name: Export candidate image
+        uses: christianpflugradt/please-behave-governance/actions/release/export-image@300b4dfcbb9347e7a5d389d85e541e193bf9de14 # updates/actions/release
+        with:
+          version: ${{ needs.plan.outputs.version }}
+          images: ledger
+      - name: Record release candidate evidence
+        uses: christianpflugradt/please-behave-governance/actions/release/evidence@300b4dfcbb9347e7a5d389d85e541e193bf9de14 # updates/actions/release
+        with:
+          operation: record
+          version: ${{ needs.plan.outputs.version }}
+          target: linux-amd64
+
+  publish:
+    name: Publish
+    needs: [plan, release-readiness, release-candidate]
+    if: >-
+      needs.plan.outputs.release == 'true' &&
+      needs.release-readiness.result == 'success' &&
+      needs.release-candidate.result == 'success'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.plan.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install project tools
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          install_args: python node
+      - name: Verify complete release candidate evidence
+        uses: christianpflugradt/please-behave-governance/actions/release/evidence@300b4dfcbb9347e7a5d389d85e541e193bf9de14 # updates/actions/release
+        with:
+          operation: verify
+          version: ${{ needs.plan.outputs.version }}
+      - name: Publish the image and the release
+        uses: christianpflugradt/please-behave-governance/actions/release/publish-image@300b4dfcbb9347e7a5d389d85e541e193bf9de14 # updates/actions/release
+        with:
+          version: ${{ needs.plan.outputs.version }}
+          force: ${{ inputs.force }}
