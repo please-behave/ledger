@@ -1,6 +1,6 @@
 id = "python-tests"
 name = "Python tests"
-description = "Python tests for release scripts, tools and local rules pass"
+description = "Python tests of the local rules pass"
 enabled = true
 run_at = ["pre-push", "check"]
 
