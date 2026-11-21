@@ -1,6 +1,7 @@
 FROM rust:1.100.0-slim-trixie AS build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
+COPY migrations ./migrations
 COPY src ./src
 RUN cargo build --release --locked
 

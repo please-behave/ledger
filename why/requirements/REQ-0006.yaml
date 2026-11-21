@@ -1,0 +1,10 @@
+id: REQ-0006
+name: Commit Format
+description: >-
+  The database must reject an attestation whose commit is not 40 or 64
+  hexadecimal characters.
+rationale: >-
+  The commit joins evidence to code, so a value that cannot be a Git object
+  name would never match.
+decisions:
+  - DEC-0001

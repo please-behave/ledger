@@ -1,0 +1,10 @@
+id: REQ-0008
+name: Rule Result Values
+description: >-
+  The database must reject a rule result whose kind is not check, review or
+  integrity, or whose status is not PASS, FAIL, ERROR, NOT_RUN or WARN.
+rationale: >-
+  Readers rely on closed sets of rule kinds and statuses to interpret the
+  evidence.
+decisions:
+  - DEC-0001

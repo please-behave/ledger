@@ -1,0 +1,14 @@
+id: DEC-0001
+name: PostgreSQL with Embedded SQL Migrations
+context: >-
+  The ledger is the only owner of the evidence that rules passed or failed. The
+  evidence must be stored durably and its allowed values must hold even when
+  the code that writes it changes.
+decision: >-
+  The ledger stores its data in PostgreSQL, reached through sqlx. The schema is
+  created and changed by plain SQL migrations that are embedded in the ledger
+  executable.
+rationale: >-
+  PostgreSQL provides constraints, transactions and real migrations from the
+  start, so invalid evidence is rejected by the database itself. Embedding the
+  migrations lets one artifact carry the code and the schema it needs.

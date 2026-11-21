@@ -1,0 +1,12 @@
+id: DEC-0002
+name: Append-only Evidence
+context: >-
+  Attestations are evidence that a repository's rules passed or failed for a
+  commit. Later decisions about releases and compliance rely on what was
+  reported at the time.
+decision: >-
+  The ledger only appends attestations. It never updates or deletes one
+  through its API; a new report is a new attestation.
+rationale: >-
+  Evidence that can be rewritten cannot be trusted, and the history of
+  reports is itself part of what the ledger shows.

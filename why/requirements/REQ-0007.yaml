@@ -1,0 +1,9 @@
+id: REQ-0007
+name: Overall Status Values
+description: >-
+  The database must reject an attestation whose overall status is not PASS,
+  FAIL or ERROR.
+rationale: >-
+  Readers rely on a closed set of overall states to rank repositories.
+decisions:
+  - DEC-0001

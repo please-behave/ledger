@@ -1,0 +1,16 @@
+id: DEC-0003
+name: Two-step Migrations Apart from Starting an Instance
+context: >-
+  Several instances of the ledger run against one database, and a deployment
+  replaces them one after another. A schema change that an instance applies on
+  its own start would break the instances that still run the release before.
+decision: >-
+  Every schema change takes two forward-only steps, expand and contract, and
+  contract happens only when no running version needs the old shape. Migrations
+  are applied by a separate subcommand, never by starting an instance, and an
+  instance reports itself ready only when the schema it needs is present.
+rationale: >-
+  Each release then works with the schema of the release before it, a new
+  instance can start while a migration runs, and an old instance keeps
+  working. Readiness keeps traffic away from an instance whose schema is
+  missing.

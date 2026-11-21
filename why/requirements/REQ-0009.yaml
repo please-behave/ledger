@@ -1,0 +1,10 @@
+id: REQ-0009
+name: Rule Result Integrity
+description: >-
+  The database must reject a rule result that belongs to no stored attestation
+  and a second rule result at a position that an attestation already uses.
+rationale: >-
+  A rule result is meaningful only as part of one attestation, in one place of
+  its list.
+decisions:
+  - DEC-0001

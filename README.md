@@ -8,4 +8,15 @@ The ledger of the Please Behave platform. It is a service in early development.
 
 > Please Behave is in early development and not ready for production use.
 
+## Running
+
+The ledger stores its data in PostgreSQL and is configured through environment variables:
+
+| Variable | Meaning |
+|---|---|
+| `LEDGER_DATABASE_URL` | PostgreSQL connection URL. Required. |
+| `LEDGER_LISTEN_ADDRESS` | Address to listen on. Defaults to `0.0.0.0:8080`. |
+
+`ledger migrate` applies the embedded migrations and exits. Starting `ledger` never migrates. `GET /healthz` answers while the process runs, and `GET /readyz` answers only when the database is reachable and has the schema this build requires.
+
 It is released as the container image `ghcr.io/please-behave/ledger`. The purpose and principles of Please Behave are in the [Why repository](https://github.com/please-behave/why).

@@ -4,3 +4,15 @@ version = "0.1.0"
 edition = "2024"
 description = "The Please Behave ledger"
 license = "PolyForm-Noncommercial-1.0.0"
+
+[dependencies]
+anyhow = "1.0.104"
+axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
+clap = { version = "4.6.9", features = ["derive"] }
+sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "migrate", "macros"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["json"] }
+
+[dev-dependencies]
+testcontainers = "0.28.0"

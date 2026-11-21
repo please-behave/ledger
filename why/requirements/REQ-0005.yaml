@@ -1,0 +1,11 @@
+id: REQ-0005
+name: Complete Attestations
+description: >-
+  The database must reject an attestation that lacks its sender, repository,
+  commit, execution points, overall status, schema version or document, and a
+  rule result that lacks its attestation, position, rule identity, kind or
+  status.
+rationale: >-
+  Evidence with a missing field cannot be attributed or compared.
+decisions:
+  - DEC-0001
