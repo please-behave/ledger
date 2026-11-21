@@ -1,0 +1,9 @@
+id = "why"
+name = "Why"
+description = "Why artifacts and the references between them are valid"
+enabled = true
+run_at = ["pre-commit", "pre-push", "check"]
+
+[check]
+command = "python3 @rule/check.py"
+timeout_seconds = 60

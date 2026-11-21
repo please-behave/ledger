@@ -1,0 +1,19 @@
+purpose: Keep the Why artifacts valid and the references between them resolving.
+problem: >-
+  The Why is the source of truth for the ledger's behavior. Without a check,
+  artifacts that break their schema or point nowhere go unnoticed.
+value: Requirements, decisions and contracts can be relied on, and every reference between them resolves.
+conditions:
+  - statement: Requirements, decisions and API contract indices conform to their schemas, and their IDs are unique.
+    rationale: Artifacts that do not match their schema or reuse an ID cannot be relied on.
+  - statement: References from requirements to decisions, from decisions to the decisions they supersede, and from contracts to requirements resolve.
+    rationale: A reference to a missing artifact is a broken statement of the Why.
+  - statement: Referenced local documents and schemas exist, are not reached through symbolic links, and schemas are valid JSON objects.
+    rationale: Contracts must reference resources inside the repository.
+success_criteria:
+  - Every violation fails the Rule and is listed individually.
+  - A repository without artifacts passes.
+  - A missing helper tool or any other technical failure is an ERROR.
+out_of_scope:
+  - description: Whether the content of requirements, decisions and contracts is meaningful.
+placement: Local, because it covers the Why layout of this repository only.
