@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Latest attestations",
+  "description": "The newest attestation of every combination of repository and execution points, as summaries.",
+  "type": "array",
+  "items": { "$ref": "attestation.schema.json#/$defs/summary" }
+}

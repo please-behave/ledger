@@ -59,22 +59,18 @@ pub async fn migrated_pool(postgres: &Postgres) -> PgPool {
     pool
 }
 
-pub fn get_status(address: SocketAddr, path: &str) -> u16 {
+pub fn get(address: SocketAddr, path: &str) -> (u16, String) {
     let mut stream = TcpStream::connect(address).expect("connect to the service");
     write!(
         stream,
         "GET {path} HTTP/1.1\r\nHost: ledger\r\nConnection: close\r\n\r\n"
     )
     .expect("send the request");
-    let mut response = String::new();
-    stream
-        .read_to_string(&mut response)
-        .expect("read the response");
-    response
-        .split_whitespace()
-        .nth(1)
-        .and_then(|status| status.parse().ok())
-        .expect("the response has a status line")
+    parse_response(&mut stream)
+}
+
+pub fn get_status(address: SocketAddr, path: &str) -> u16 {
+    get(address, path).0
 }
 
 pub fn post(address: SocketAddr, path: &str, body: &str) -> (u16, String) {
@@ -85,6 +81,10 @@ pub fn post(address: SocketAddr, path: &str, body: &str) -> (u16, String) {
         body.len()
     )
     .expect("send the request");
+    parse_response(&mut stream)
+}
+
+fn parse_response(stream: &mut TcpStream) -> (u16, String) {
     let mut response = String::new();
     stream
         .read_to_string(&mut response)

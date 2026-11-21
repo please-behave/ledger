@@ -1,9 +1,10 @@
 use crate::attestation::Envelope;
 use anyhow::{Context, Result};
+use serde::Serialize;
 use serde_json::Value;
-use sqlx::PgPool;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::PgPoolOptions;
+use sqlx::{FromRow, PgPool};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -89,4 +90,78 @@ pub async fn append_attestation(
     }
     transaction.commit().await?;
     Ok(id)
+}
+
+#[derive(Serialize, FromRow)]
+pub struct Summary {
+    id: String,
+    received_at: String,
+    sender: String,
+    repository: String,
+    commit: String,
+    execution_points: Vec<String>,
+    overall: String,
+    warn_count: i64,
+    not_run_count: i64,
+}
+
+#[derive(Serialize, FromRow)]
+pub struct ResultRow {
+    id: String,
+    kind: String,
+    status: String,
+}
+
+#[derive(Serialize)]
+pub struct StoredAttestation {
+    #[serde(flatten)]
+    summary: Summary,
+    results: Vec<ResultRow>,
+}
+
+macro_rules! summary_query {
+    ($source:literal) => {
+        concat!(
+            "select a.id::text as id, \
+             to_char(a.received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') as received_at, \
+             a.sender, a.repository, a.commit_sha as \"commit\", a.execution_points, a.overall, \
+             (select count(*) from attestation_results r \
+              where r.attestation_id = a.id and r.status = 'WARN') as warn_count, \
+             (select count(*) from attestation_results r \
+              where r.attestation_id = a.id and r.status = 'NOT_RUN') as not_run_count \
+             from ",
+            $source
+        )
+    };
+}
+
+pub async fn latest_attestations(pool: &PgPool) -> Result<Vec<Summary>, sqlx::Error> {
+    sqlx::query_as(summary_query!(
+        "(select distinct on (repository, execution_points) * from attestations \
+          order by repository, execution_points, received_at desc, id desc) a \
+         order by a.repository, a.execution_points"
+    ))
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn attestation(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Option<StoredAttestation>, sqlx::Error> {
+    let summary: Option<Summary> = sqlx::query_as(summary_query!("attestations a where a.id = $1"))
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+    let Some(summary) = summary else {
+        return Ok(None);
+    };
+    let results = sqlx::query_as(
+        "select rule_id as id, kind, status from attestation_results \
+         where attestation_id = $1 order by position",
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await?;
+    Ok(Some(StoredAttestation { summary, results }))
 }

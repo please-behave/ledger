@@ -1,0 +1,9 @@
+id: REQ-0015
+name: Latest Attestation per Combination
+description: >-
+  `GET /v0/attestations/latest` must return, for every combination of
+  repository and execution points, its newest attestation as a summary, ordered
+  by repository and then by execution points.
+rationale: >-
+  The cockpit shows the current state of every repository and execution point
+  without reading the whole history.

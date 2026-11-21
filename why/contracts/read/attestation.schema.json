@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Attestation",
+  "description": "One stored attestation: the fields of its summary and its results.",
+  "type": "object",
+  "required": [
+    "results"
+  ],
+  "allOf": [
+    {
+      "$ref": "#/$defs/summary"
+    }
+  ],
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "required": [
+        "id",
+        "received_at",
+        "sender",
+        "repository",
+        "commit",
+        "execution_points",
+        "overall",
+        "warn_count",
+        "not_run_count"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The attestation's UUID."
+        },
+        "received_at": {
+          "type": "string",
+          "description": "When the ledger received it, as an RFC 3339 UTC timestamp."
+        },
+        "sender": {
+          "type": "string"
+        },
+        "repository": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "execution_points": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "overall": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "ERROR"
+          ]
+        },
+        "warn_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The number of results with status WARN."
+        },
+        "not_run_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The number of results with status NOT_RUN."
+        }
+      }
+    }
+  },
+  "properties": {
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "check",
+              "review",
+              "integrity"
+            ]
+          },
+          "status": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "ERROR",
+              "NOT_RUN",
+              "WARN"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

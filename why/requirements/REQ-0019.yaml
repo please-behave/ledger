@@ -1,0 +1,8 @@
+id: REQ-0019
+name: Reads Change Nothing
+description: >-
+  Reading attestations through the API must not change any stored data.
+rationale: >-
+  Evidence stays as reported, however often and by whomever it is read.
+decisions:
+  - why:DEC-0002

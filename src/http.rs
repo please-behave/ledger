@@ -1,7 +1,7 @@
 use crate::attestation::Envelope;
 use crate::database;
 use axum::body::Bytes;
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router, serve};
@@ -10,12 +10,15 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 use tokio::signal;
+use uuid::Uuid;
 
 pub fn router(pool: PgPool) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/v0/attestations", post(ingest))
+        .route("/v0/attestations/latest", get(latest))
+        .route("/v0/attestations/{id}", get(read))
         .with_state(pool)
 }
 
@@ -47,6 +50,30 @@ async fn ingest(
         Ok(id) => Ok((StatusCode::CREATED, Json(json!({ "id": id.to_string() })))),
         Err(error) => Err(storage_failure(&error)),
     }
+}
+
+async fn latest(State(pool): State<PgPool>) -> Result<Json<Vec<database::Summary>>, StatusCode> {
+    database::latest_attestations(&pool)
+        .await
+        .map(Json)
+        .map_err(|error| read_failure(&error))
+}
+
+async fn read(
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
+) -> Result<Json<database::StoredAttestation>, StatusCode> {
+    let id: Uuid = id.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+    match database::attestation(&pool, id).await {
+        Ok(Some(attestation)) => Ok(Json(attestation)),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(error) => Err(read_failure(&error)),
+    }
+}
+
+fn read_failure(error: &sqlx::Error) -> StatusCode {
+    tracing::error!(%error, "cannot read the attestations");
+    StatusCode::INTERNAL_SERVER_ERROR
 }
 
 fn storage_failure(error: &sqlx::Error) -> StatusCode {
