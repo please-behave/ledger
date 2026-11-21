@@ -1,0 +1,37 @@
+include = [
+  "git::https://github.com/christianpflugradt/please-behave-governance.git//rulesets/repository-conventions/mise.toml?ref=29b8b072e41158ab12cadafbda35e868642b224e",
+  "git::https://github.com/christianpflugradt/please-behave-governance.git//rulesets/security/mise.toml?ref=0de24d29d6195adecb6806103e205a202793cc0b",
+  "git::https://github.com/christianpflugradt/please-behave-governance.git//rulesets/open-source-software/mise.toml?ref=4a3679d9da910272ca4d741307e4cbbe2bde6d6e",
+  "git::https://github.com/christianpflugradt/please-behave-governance.git//rulesets/releasable-open-source-software/mise.toml?ref=29b8b072e41158ab12cadafbda35e868642b224e",
+]
+
+[task_config]
+includes = [
+  "git::https://github.com/christianpflugradt/please-behave-governance.git//mise-tasks/release?ref=29b8b072e41158ab12cadafbda35e868642b224e",
+]
+
+[tools]
+"github:please-behave/cli" = "0.18.0"
+rust = { version = "1.100.0", profile = "minimal", components = "rustfmt,clippy,llvm-tools" }
+python = "3.15.2"
+node = "26.13.1"
+gh = "2.104.0"
+"cargo:cargo-audit" = "0.23.0"
+"aqua:taiki-e/cargo-llvm-cov" = "0.9.1"
+"aqua:boyter/scc" = "4.1.0"
+
+[tasks.build]
+description = "Build the release executable"
+run = "cargo build --release --locked"
+
+[tasks.format]
+description = "Format Rust and shell sources"
+run = ["cargo fmt --all", "git ls-files -z '*.sh' | xargs -0 -r shfmt -w"]
+
+[tasks.verify]
+description = "Run the deterministic Please Behave checks and stop at the first blocker"
+run = "please run --at pre-push --checks-only --fail-fast"
+
+[tasks.setup]
+description = "Fetch locked Cargo dependencies for CI and offline Git hooks"
+run = "cargo fetch --locked"

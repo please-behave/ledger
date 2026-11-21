@@ -1,0 +1,10 @@
+id = "rust-tests"
+name = "Rust tests"
+description = "All Rust unit, acceptance, documentation and compatibility tests pass"
+enabled = true
+run_at = ["pre-push", "check"]
+
+[check]
+resource = "cargo"
+command = "cargo --offline test --locked"
+timeout_seconds = 600
