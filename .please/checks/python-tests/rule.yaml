@@ -1,0 +1,13 @@
+purpose: Run all Python tests of the local rules as one suite.
+problem: The local rules could break unnoticed, because the Rust tests do not cover them.
+value: Defects in the rules are found before the push, and new tests are picked up without configuration.
+conditions:
+  - statement: Every test_*.py file in each local rule directory is discovered and passes.
+    rationale: Tests live beside the code they test, and one suite avoids a rule per directory.
+success_criteria:
+  - A failing test fails the rule.
+  - A crash of the runner is an ERROR.
+out_of_scope:
+  - description: Rust tests, which have their own rule.
+  - description: Selecting individual tests.
+placement: Local, because it knows the directory layout of this repository only.

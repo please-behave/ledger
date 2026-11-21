@@ -27,6 +27,7 @@ class SchemaSubsetTests(unittest.TestCase):
         self.assertTrue(any("x.name" in error for error in errors), errors)
         self.assertTrue(any("unknown property extra" in error for error in errors), errors)
 
+
 @unittest.skipUnless(shutil.which("yq"), "yq is required to read YAML")
 class RepositoryTests(unittest.TestCase):
     def setUp(self):
