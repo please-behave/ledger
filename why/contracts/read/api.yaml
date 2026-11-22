@@ -21,6 +21,7 @@ contracts:
       - REQ-0018
       - REQ-0019
       - REQ-0020
+      - REQ-0028
   - id: CON-0004
     name: Attestation History
     document: history.md

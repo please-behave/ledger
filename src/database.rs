@@ -171,11 +171,26 @@ pub struct Summary {
     result_count: i64,
 }
 
-#[derive(Serialize, FromRow)]
+#[derive(Serialize)]
 pub struct ResultRow {
     id: String,
     kind: String,
     status: String,
+    verification: Verification,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "status", content = "reason", rename_all = "snake_case")]
+enum Verification {
+    Verified,
+    Unverified(UnverifiedReason),
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+enum UnverifiedReason {
+    Unregistered,
+    Mismatch,
 }
 
 #[derive(Serialize)]
@@ -240,12 +255,29 @@ pub async fn attestation(
     let Some(summary) = summary else {
         return Ok(None);
     };
-    let results = sqlx::query_as(
-        "select rule_id as id, kind, status from attestation_results \
-         where attestation_id = $1 order by position",
+    let rows: Vec<(String, String, String, Option<bool>)> = sqlx::query_as(
+        "select r.rule_id, r.kind, r.status, r.rule_digest = registration.digest \
+         from attestation_results r \
+         left join rule_registrations registration \
+           on registration.source = r.rule_source and registration.path = r.rule_path \
+          and registration.id = r.rule_local_id and registration.version = r.rule_version \
+         where r.attestation_id = $1 order by r.position",
     )
     .bind(id)
     .fetch_all(pool)
     .await?;
+    let results = rows
+        .into_iter()
+        .map(|(id, kind, status, digest_matches)| ResultRow {
+            id,
+            kind,
+            status,
+            verification: match digest_matches {
+                Some(true) => Verification::Verified,
+                Some(false) => Verification::Unverified(UnverifiedReason::Mismatch),
+                None => Verification::Unverified(UnverifiedReason::Unregistered),
+            },
+        })
+        .collect();
     Ok(Some(StoredAttestation { summary, results }))
 }

@@ -103,6 +103,7 @@ async fn migrate_creates_the_schema_and_is_idempotent() {
     assert_eq!(migrations_applied(&pool).await, applied);
 }
 
+// REQ-0028: legacy results read as unregistered after the schema is expanded.
 #[tokio::test]
 async fn rule_identity_migrations_preserve_existing_rows_and_legacy_inserts() {
     const MIGRATIONS: Migrator = sqlx::migrate!();
@@ -139,6 +140,19 @@ async fn rule_identity_migrations_preserve_existing_rows_and_legacy_inserts() {
         results,
         [("format".to_owned(), true), ("format".to_owned(), true)]
     );
+
+    let id = sqlx::query_scalar("select id from attestations")
+        .fetch_one(&pool)
+        .await
+        .expect("the legacy attestation ID");
+    let attestation = ledger::database::attestation(&pool, id)
+        .await
+        .expect("read the legacy attestation")
+        .expect("the legacy attestation exists");
+    let response = serde_json::to_value(attestation).expect("serialize the response");
+    let unregistered = serde_json::json!({"status": "unverified", "reason": "unregistered"});
+    assert_eq!(response["results"][0]["verification"], unregistered);
+    assert_eq!(response["results"][1]["verification"], unregistered);
 
     let (valid, definition): (bool, String) = sqlx::query_as(
         "select indisvalid, pg_get_indexdef(indexrelid) from pg_index \

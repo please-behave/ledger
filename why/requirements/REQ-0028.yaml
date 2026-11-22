@@ -1,0 +1,17 @@
+id: REQ-0028
+name: Verify Rule Results on Read
+description: >-
+  The ledger must report verification for every result in an attestation detail
+  read. A result with a registration for the same rule source, path, local ID
+  and version is verified when the digests match and unverified with reason
+  `mismatch` when both digests are present and differ. A result with missing
+  identity, version or digest, or without a registration for that identity and
+  version, is unverified with reason `unregistered`. The ledger must compute
+  verification on each read from the current registry without storing it or
+  changing the attestation.
+rationale: >-
+  Readers can tell whether reported rule details match a registered version.
+  A later registration resolves earlier results while preserving the evidence
+  as reported.
+decisions:
+  - why:DEC-0013

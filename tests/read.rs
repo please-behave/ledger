@@ -180,6 +180,69 @@ async fn counts_and_results_follow_the_stored_attestation() {
     assert_eq!(attestation["results"][0]["kind"], "check");
 }
 
+// REQ-0028: a later registration resolves results against the full identity and version.
+#[tokio::test(flavor = "multi_thread")]
+async fn verification_reflects_a_registration_that_arrives_after_ingest() {
+    let postgres = postgres().await;
+    let address = start_service(migrated_pool(&postgres).await).await;
+    let vectors: Value =
+        serde_json::from_str(include_str!("../why/contracts/rule-digest/vectors.json")).unwrap();
+    let registration = &vectors[0]["input"];
+    let matching = json!({
+        "source": registration["source"],
+        "path": registration["path"],
+        "id": registration["id"],
+        "version": registration["version"],
+        "digest": vectors[0]["digest"],
+    });
+    let variants = [
+        ("digest", "different-digest"),
+        ("source", "github.com/example/other"),
+        ("path", ".please/checks/other"),
+        ("id", "other"),
+        ("version", "1.1"),
+    ];
+    let mut report = envelope("github.com/example/consumer", &["ci"], COMMIT, &["PASS"; 8]);
+    let results = report["attestation"]["results"].as_array_mut().unwrap();
+    results[0]["rule"] = matching.clone();
+    for (result, (field, value)) in results[1..].iter_mut().zip(variants) {
+        result["rule"] = matching.clone();
+        result["rule"][field] = json!(value);
+    }
+    results[6]["rule"] = json!({
+        "source": registration["source"],
+        "path": registration["path"],
+        "id": registration["id"],
+    });
+    let id = ingest(address, report).await;
+
+    let (status, mut before) = read_json(address, format!("/v0/attestations/{id}")).await;
+    assert_eq!(status, 200);
+    let unregistered = json!({"status": "unverified", "reason": "unregistered"});
+    for result in before["results"].as_array().unwrap() {
+        assert_eq!(result["verification"], unregistered);
+    }
+
+    let request =
+        json!({"sender": "catalog-ci", "commit": COMMIT, "rules": [registration]}).to_string();
+    let (status, receipt) =
+        tokio::task::spawn_blocking(move || post(address, "/v0/rule-registrations", &request))
+            .await
+            .expect("the request finishes");
+    assert_eq!(status, 200, "{receipt}");
+    let receipt: Value = serde_json::from_str(&receipt).unwrap();
+    assert_eq!(
+        receipt["outcomes"],
+        json!([{"outcome": "created", "digest": vectors[0]["digest"]}])
+    );
+
+    let (status, after) = read_json(address, format!("/v0/attestations/{id}")).await;
+    assert_eq!(status, 200);
+    before["results"][0]["verification"] = json!({"status": "verified"});
+    before["results"][1]["verification"] = json!({"status": "unverified", "reason": "mismatch"});
+    assert_eq!(after, before);
+}
+
 // REQ-0016, REQ-0020: an attestation without results has zero counts and an empty result list.
 // REQ-0017: its results are an empty list.
 #[tokio::test(flavor = "multi_thread")]

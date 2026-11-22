@@ -84,7 +84,8 @@
         "required": [
           "id",
           "kind",
-          "status"
+          "status",
+          "verification"
         ],
         "properties": {
           "id": {
@@ -104,6 +105,26 @@
               "ERROR",
               "NOT_RUN",
               "WARN"
+            ]
+          },
+          "verification": {
+            "type": "object",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "required": ["status"],
+                "properties": {
+                  "status": { "const": "verified" }
+                }
+              },
+              {
+                "additionalProperties": false,
+                "required": ["status", "reason"],
+                "properties": {
+                  "status": { "const": "unverified" },
+                  "reason": { "enum": ["unregistered", "mismatch"] }
+                }
+              }
             ]
           }
         }

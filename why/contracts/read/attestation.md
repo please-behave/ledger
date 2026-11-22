@@ -13,3 +13,15 @@ Producer: the ledger. Consumer: the cockpit. All paths of this API start with `/
 | `404` | No attestation has the identifier. |
 
 The read changes nothing.
+
+## Result verification
+
+Every result has a `verification` object. The ledger looks up the stored rule source, path, local ID and version in the registry and compares the reported digest with the registered digest.
+
+| Verification object | Meaning |
+| --- | --- |
+| `{"status":"verified"}` | The registration matches the identity and version, and the digests are equal. |
+| `{"status":"unverified","reason":"mismatch"}` | The registration matches the identity and version, and the digests differ. |
+| `{"status":"unverified","reason":"unregistered"}` | The result lacks an identity, version or digest, or there is no registration for that identity and version. |
+
+The ledger computes verification on each read. A later registration can resolve an earlier result while the attestation and its results stay as reported.
