@@ -4,3 +4,5 @@ repository:
 linked:
   - alias: why
     source: github:please-behave/why
+  - alias: cli
+    source: github:please-behave/cli

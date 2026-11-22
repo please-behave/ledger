@@ -1,0 +1,12 @@
+id: REQ-0023
+name: Canonical Rule Digest
+description: >-
+  The ledger must compute the same rule digest for canonically equivalent
+  inputs and a different digest when any covered field changes its canonical
+  value.
+rationale: >-
+  Registration and result verification depend on independently computed
+  digests agreeing on the displayed details of a rule version.
+decisions:
+  - why:DEC-0012
+  - why:DEC-0013

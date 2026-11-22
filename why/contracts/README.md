@@ -2,6 +2,12 @@
 
 An API is a compatibility boundary between a producer and its consumers. A contract defines one part of that boundary; contracts in the same API share one compatibility version.
 
+| API | Contract |
+|---|---|
+| Ingest | [Attestation Envelope](ingest/attestation.md) |
+| Read | [Latest Attestations](read/latest.md), [Attestation](read/attestation.md), [Attestation History](read/history.md) |
+| Rule Digest | [Canonical Rule Digest](rule-digest/digest.md) |
+
 ## Representation
 
 Each API directory contains an `api.yaml`, validated by the [contract index schema](https://github.com/please-behave/why/blob/main/standard/contract-index.schema.json) of the Why standard. The index records the stable `API-NNNN` ID, the name, the compatibility version and the contracts. Each contract records a globally unique, stable `CON-NNNN` ID, a name, a Markdown document, an optional structural JSON schema and the requirements it specifies. IDs are never reused. Document and schema paths are relative to the index, stay inside the directory and are not reached through symbolic links.

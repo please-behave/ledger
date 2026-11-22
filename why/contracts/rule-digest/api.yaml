@@ -1,0 +1,9 @@
+id: API-0003
+name: Rule Digest
+version: 1
+contracts:
+  - id: CON-0005
+    name: Canonical Rule Digest
+    document: digest.md
+    requirements:
+      - REQ-0023
