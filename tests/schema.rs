@@ -1,6 +1,7 @@
 mod support;
 
 use sqlx::PgPool;
+use sqlx::migrate::Migrator;
 use support::{migrated_pool, postgres};
 
 const ATTESTATION_ID: &str = "'0192f0a0-0000-7000-8000-000000000001'::uuid";
@@ -94,10 +95,59 @@ async fn migrate_creates_the_schema_and_is_idempotent() {
         "attestations_latest_idx",
         "attestations_repository_commit_idx",
         "attestation_results_rule_id_idx",
+        "attestation_results_rule_identity_version_idx",
     ] {
         assert!(exists(&pool, index).await, "{index} exists");
     }
     assert_eq!(migrations_applied(&pool).await, applied);
+}
+
+#[tokio::test]
+async fn rule_identity_migrations_preserve_existing_rows_and_legacy_inserts() {
+    const MIGRATIONS: Migrator = sqlx::migrate!();
+    const ORIGINAL_SCHEMA: i64 = 20261121000000;
+    let database = postgres().await;
+    let pool = ledger::database::connect(&database.url)
+        .await
+        .expect("connect");
+    MIGRATIONS
+        .run_to(ORIGINAL_SCHEMA, &pool)
+        .await
+        .expect("apply the original schema");
+    insert_attestation(&pool, &[])
+        .await
+        .expect("an attestation");
+    insert_result(&pool, &[]).await.expect("an existing result");
+
+    ledger::database::migrate(&pool)
+        .await
+        .expect("expand the schema");
+    insert_result(&pool, &[("position", "1")])
+        .await
+        .expect("a result inserted by an older build");
+
+    let results: Vec<(String, bool)> = sqlx::query_as(
+        "select rule_id, rule_source is null and rule_path is null and rule_local_id is null \
+         and rule_version is null and rule_digest is null \
+         from attestation_results order by position",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("read both legacy results");
+    assert_eq!(
+        results,
+        [("format".to_owned(), true), ("format".to_owned(), true)]
+    );
+
+    let (valid, definition): (bool, String) = sqlx::query_as(
+        "select indisvalid, pg_get_indexdef(indexrelid) from pg_index \
+         where indexrelid = 'attestation_results_rule_identity_version_idx'::regclass",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("read the lookup index");
+    assert!(valid, "the concurrent index build completed");
+    assert!(definition.contains("(rule_source, rule_path, rule_local_id, rule_version)"));
 }
 
 #[tokio::test]
