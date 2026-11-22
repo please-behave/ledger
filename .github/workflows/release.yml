@@ -83,17 +83,17 @@ jobs:
           --output type=oci,dest=dist/ledger-${{ matrix.target }}.tar
           .
       - name: Validate candidate
-        uses: christianpflugradt/please-behave-governance/actions/release/governance@c85286b88d8fe1da760ba222c7d787a96c65019b # updates/actions/release
+        uses: christianpflugradt/please-behave-governance/actions/release/governance@afcf276e729e20b014b25b713a52b577f9224ccf # updates/actions/release
         with:
           target: ${{ matrix.target }}
       - name: Check the image candidate of the platform
-        uses: christianpflugradt/please-behave-governance/actions/release/check-image@c85286b88d8fe1da760ba222c7d787a96c65019b # updates/actions/release
+        uses: christianpflugradt/please-behave-governance/actions/release/check-image@afcf276e729e20b014b25b713a52b577f9224ccf # updates/actions/release
         with:
           version: ${{ needs.plan.outputs.version }}
           target: ${{ matrix.target }}
           images: ledger
       - name: Record release candidate evidence
-        uses: christianpflugradt/please-behave-governance/actions/release/evidence@c85286b88d8fe1da760ba222c7d787a96c65019b # updates/actions/release
+        uses: christianpflugradt/please-behave-governance/actions/release/evidence@afcf276e729e20b014b25b713a52b577f9224ccf # updates/actions/release
         with:
           operation: record
           version: ${{ needs.plan.outputs.version }}
@@ -126,12 +126,12 @@ jobs:
           experimental: true
           version: 2026.11.11
       - name: Verify complete release candidate evidence
-        uses: christianpflugradt/please-behave-governance/actions/release/evidence@c85286b88d8fe1da760ba222c7d787a96c65019b # updates/actions/release
+        uses: christianpflugradt/please-behave-governance/actions/release/evidence@afcf276e729e20b014b25b713a52b577f9224ccf # updates/actions/release
         with:
           operation: verify
           version: ${{ needs.plan.outputs.version }}
       - name: Publish the image and the release
-        uses: christianpflugradt/please-behave-governance/actions/release/publish-image@c85286b88d8fe1da760ba222c7d787a96c65019b # updates/actions/release
+        uses: christianpflugradt/please-behave-governance/actions/release/publish-image@afcf276e729e20b014b25b713a52b577f9224ccf # updates/actions/release
         with:
           version: ${{ needs.plan.outputs.version }}
           force: ${{ inputs.force }}
