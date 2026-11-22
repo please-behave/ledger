@@ -2,8 +2,10 @@
   "root": "dist",
   "targets": {
     "linux-amd64": [
-      "ledger.tar",
-      "metadata.json"
+      "ledger-linux-amd64.tar"
+    ],
+    "linux-arm64": [
+      "ledger-linux-arm64.tar"
     ]
   }
 }
