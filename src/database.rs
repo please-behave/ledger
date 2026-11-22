@@ -148,6 +148,22 @@ pub async fn latest_attestations(pool: &PgPool) -> Result<Vec<Summary>, sqlx::Er
     .await
 }
 
+pub async fn attestation_history(
+    pool: &PgPool,
+    before: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<Summary>, sqlx::Error> {
+    sqlx::query_as(summary_query!(
+        "(select * from attestations where ($1::uuid is null or id < $1) \
+          order by id desc limit $2) a \
+         order by a.id desc"
+    ))
+    .bind(before)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn attestation(
     pool: &PgPool,
     id: Uuid,

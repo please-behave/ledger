@@ -1,7 +1,7 @@
 use crate::attestation::Envelope;
 use crate::database;
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{Path, RawQuery, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router, serve};
@@ -12,11 +12,14 @@ use tokio::net::TcpListener;
 use tokio::signal;
 use uuid::Uuid;
 
+const DEFAULT_PAGE_SIZE: i64 = 100;
+const MAX_PAGE_SIZE: i64 = 200;
+
 pub fn router(pool: PgPool) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
-        .route("/v0/attestations", post(ingest))
+        .route("/v0/attestations", post(ingest).get(history))
         .route("/v0/attestations/latest", get(latest))
         .route("/v0/attestations/{id}", get(read))
         .with_state(pool)
@@ -54,6 +57,44 @@ async fn ingest(
 
 async fn latest(State(pool): State<PgPool>) -> Result<Json<Vec<database::Summary>>, StatusCode> {
     database::latest_attestations(&pool)
+        .await
+        .map(Json)
+        .map_err(|error| read_failure(&error))
+}
+
+struct Page {
+    limit: i64,
+    before: Option<Uuid>,
+}
+
+impl Page {
+    fn parse(query: Option<&str>) -> Option<Self> {
+        let (mut limit, mut before) = (None, None);
+        for pair in query
+            .unwrap_or_default()
+            .split('&')
+            .filter(|pair| !pair.is_empty())
+        {
+            let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
+            match name {
+                "limit" if limit.is_none() => limit = Some(value.parse::<i64>().ok()?),
+                "before" if before.is_none() => before = Some(value.parse::<Uuid>().ok()?),
+                _ => return None,
+            }
+        }
+        let limit = limit.unwrap_or(DEFAULT_PAGE_SIZE);
+        (1..=MAX_PAGE_SIZE)
+            .contains(&limit)
+            .then_some(Self { limit, before })
+    }
+}
+
+async fn history(
+    State(pool): State<PgPool>,
+    RawQuery(query): RawQuery,
+) -> Result<Json<Vec<database::Summary>>, StatusCode> {
+    let page = Page::parse(query.as_deref()).ok_or(StatusCode::BAD_REQUEST)?;
+    database::attestation_history(&pool, page.before, page.limit)
         .await
         .map(Json)
         .map_err(|error| read_failure(&error))

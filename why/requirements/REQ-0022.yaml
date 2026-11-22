@@ -1,0 +1,8 @@
+id: REQ-0022
+name: Invalid Paging Parameters
+description: >-
+  `GET /v0/attestations` must answer with `400` when `limit` is not an integer
+  from 1 to 200 or when `before` is not a UUID.
+rationale: >-
+  A reader must be able to tell a request that cannot be answered from a page
+  that happens to be empty.

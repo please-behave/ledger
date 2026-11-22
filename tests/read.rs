@@ -217,7 +217,7 @@ async fn unknown_and_malformed_identifiers_are_told_apart() {
     assert_eq!(malformed, 400);
 }
 
-// REQ-0019: reading leaves the stored data as it was.
+// REQ-0019: reading, the history included, leaves the stored data as it was.
 #[tokio::test(flavor = "multi_thread")]
 async fn reading_changes_nothing() {
     let postgres = postgres().await;
@@ -243,6 +243,159 @@ async fn reading_changes_nothing() {
     latest(address).await;
     read_json(address, format!("/v0/attestations/{id}")).await;
     read(address, "/v0/attestations/not-a-uuid").await;
+    read_json(address, "/v0/attestations".to_string()).await;
+    read(address, "/v0/attestations?limit=0").await;
 
     assert_eq!(snapshot().await, before);
+}
+
+const SMALLEST: &str = "00000000-0000-0000-0000-000000000000";
+const GREATEST: &str = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+
+fn sequential_id(number: i64) -> String {
+    format!("0190a8c2-0000-7000-8000-{number:012x}")
+}
+
+async fn insert_sequential(pool: &PgPool, count: i64) {
+    sqlx::query(
+        "insert into attestations \
+         (id, received_at, sender, repository, commit_sha, execution_points, overall, schema_version, document) \
+         select ('0190a8c2-0000-7000-8000-' || lpad(to_hex(n), 12, '0'))::uuid, \
+                timestamptz '2026-01-01 00:00:00+00', 'ci', 'r', $1, array['ci'], 'PASS', 1, '{}'::jsonb \
+         from generate_series(1, $2::bigint) n",
+    )
+    .bind(commit('a'))
+    .bind(count)
+    .execute(pool)
+    .await
+    .expect("insert the attestations");
+}
+
+async fn history_ids(address: SocketAddr, query: &str) -> Vec<String> {
+    let (status, body) = read_json(address, format!("/v0/attestations{query}")).await;
+    assert_eq!(status, 200);
+    body.as_array()
+        .expect("an array")
+        .iter()
+        .map(|summary| summary["id"].as_str().expect("id").to_string())
+        .collect()
+}
+
+// REQ-0021: all attestations, newest first, even when they were received at the same instant.
+#[tokio::test(flavor = "multi_thread")]
+async fn history_orders_by_identifier_from_greatest_to_smallest() {
+    let postgres = postgres().await;
+    let pool = migrated_pool(&postgres).await;
+    let address = start_service(pool.clone()).await;
+    insert_sequential(&pool, 5).await;
+
+    let ids = history_ids(address, "").await;
+
+    let expected: Vec<String> = (1..=5).rev().map(sequential_id).collect();
+    assert_eq!(ids, expected);
+}
+
+// REQ-0021: the summary is the one of the latest read.
+#[tokio::test(flavor = "multi_thread")]
+async fn history_returns_the_summaries_of_the_latest_read() {
+    let postgres = postgres().await;
+    let address = start_service(migrated_pool(&postgres).await).await;
+    ingest(address, envelope("r", &["ci"], COMMIT, &["WARN", "PASS"])).await;
+
+    let (_, history) = read_json(address, "/v0/attestations".to_string()).await;
+
+    assert_eq!(history, Value::Array(latest(address).await));
+}
+
+// REQ-0021: nothing stored is an empty list.
+#[tokio::test(flavor = "multi_thread")]
+async fn history_is_empty_without_attestations() {
+    let postgres = postgres().await;
+    let address = start_service(migrated_pool(&postgres).await).await;
+
+    assert!(history_ids(address, "").await.is_empty());
+}
+
+// REQ-0021: the default limit is 100 and the greatest limit is 200.
+#[tokio::test(flavor = "multi_thread")]
+async fn history_defaults_to_100_and_allows_at_most_200() {
+    let postgres = postgres().await;
+    let pool = migrated_pool(&postgres).await;
+    let address = start_service(pool.clone()).await;
+    insert_sequential(&pool, 250).await;
+
+    assert_eq!(history_ids(address, "").await.len(), 100);
+    assert_eq!(history_ids(address, "?limit=1").await.len(), 1);
+    assert_eq!(history_ids(address, "?limit=200").await.len(), 200);
+}
+
+// REQ-0021: `before` excludes the given identifier and everything above it.
+#[tokio::test(flavor = "multi_thread")]
+async fn history_before_returns_only_smaller_identifiers() {
+    let postgres = postgres().await;
+    let pool = migrated_pool(&postgres).await;
+    let address = start_service(pool.clone()).await;
+    insert_sequential(&pool, 5).await;
+
+    let stored = history_ids(address, &format!("?before={}", sequential_id(3))).await;
+    let unknown = history_ids(address, "?before=0190a8c2-0000-7000-8000-0000000000ff").await;
+    let smallest = history_ids(address, &format!("?before={SMALLEST}")).await;
+    let greatest = history_ids(address, &format!("?before={GREATEST}")).await;
+
+    assert_eq!(stored, [sequential_id(2), sequential_id(1)]);
+    assert_eq!(unknown.len(), 5);
+    assert!(smallest.is_empty());
+    assert_eq!(greatest.len(), 5);
+}
+
+// REQ-0021: pages read in sequence return every attestation exactly once, even with arrivals between reads.
+#[tokio::test(flavor = "multi_thread")]
+async fn history_pages_return_every_attestation_once() {
+    let postgres = postgres().await;
+    let pool = migrated_pool(&postgres).await;
+    let address = start_service(pool.clone()).await;
+    insert_sequential(&pool, 7).await;
+
+    let mut seen = Vec::new();
+    let mut before = String::new();
+    loop {
+        let page = history_ids(address, &format!("?limit=3{before}")).await;
+        seen.extend(page.clone());
+        ingest(address, envelope("r", &["ci"], COMMIT, &[])).await;
+        if page.len() < 3 {
+            break;
+        }
+        before = format!("&before={}", page.last().expect("a last identifier"));
+    }
+
+    let expected: Vec<String> = (1..=7).rev().map(sequential_id).collect();
+    assert_eq!(seen, expected);
+}
+
+// REQ-0022: every malformed or out-of-range parameter is 400.
+#[tokio::test(flavor = "multi_thread")]
+async fn history_rejects_invalid_paging_parameters() {
+    let postgres = postgres().await;
+    let address = start_service(migrated_pool(&postgres).await).await;
+
+    for query in [
+        "?limit=0",
+        "?limit=201",
+        "?limit=-1",
+        "?limit=abc",
+        "?limit=",
+        "?limit=1.5",
+        "?limit=99999999999999999999",
+        "?limit=1&limit=2",
+        "?before=not-a-uuid",
+        "?before=",
+        "?before=0190a8c2-0000-7000-8000-00000000000g",
+        "?offset=1",
+    ] {
+        let path = format!("/v0/attestations{query}");
+        let (status, _) = tokio::task::spawn_blocking(move || get(address, &path))
+            .await
+            .expect("the request finishes");
+        assert_eq!(status, 400, "{query}");
+    }
 }
