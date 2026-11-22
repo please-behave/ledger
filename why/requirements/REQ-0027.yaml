@@ -1,0 +1,8 @@
+id: REQ-0027
+name: Validate Bounded Registration Batches
+description: >-
+  The ledger must reject a registration request before storing any rule if the
+  request exceeds the contract bounds or contains an invalid rule or envelope.
+rationale: >-
+  The ledger can then bound the work of a request and process only batches whose
+  rule digests it can compute.

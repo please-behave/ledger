@@ -64,22 +64,24 @@ fn deserialize_rule<'de, D: Deserializer<'de>>(
         }
         _ => false,
     };
-    if bounded_text(&rule.source, MAX_RULE_SOURCE_CHARS)
-        && bounded_text(&rule.path, MAX_RULE_PATH_CHARS)
-        && bounded_text(&rule.id, MAX_RULE_ID_CHARS)
-        && valid_version_and_digest
-    {
+    if valid_rule_identity(&rule.source, &rule.path, &rule.id) && valid_version_and_digest {
         Ok(Some(rule))
     } else {
         Err(D::Error::custom("invalid rule metadata"))
     }
 }
 
+pub(crate) fn valid_rule_identity(source: &str, path: &str, id: &str) -> bool {
+    bounded_text(source, MAX_RULE_SOURCE_CHARS)
+        && bounded_text(path, MAX_RULE_PATH_CHARS)
+        && bounded_text(id, MAX_RULE_ID_CHARS)
+}
+
 fn bounded_text(value: &str, max_chars: usize) -> bool {
     !value.is_empty() && value.chars().nth(max_chars).is_none() && !value.contains('\0')
 }
 
-fn valid_version(version: &str) -> bool {
+pub(crate) fn valid_version(version: &str) -> bool {
     let valid_component = |part: &str| {
         !part.is_empty()
             && (part == "0" || !part.starts_with('0'))

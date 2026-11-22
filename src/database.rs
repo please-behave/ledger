@@ -1,4 +1,5 @@
 use crate::attestation::Envelope;
+use crate::registration::{OutcomeKind, Rule};
 use anyhow::{Context, Result};
 use serde::Serialize;
 use serde_json::Value;
@@ -98,6 +99,62 @@ pub async fn append_attestation(
     }
     transaction.commit().await?;
     Ok(id)
+}
+
+pub(crate) async fn register_rule(
+    pool: &PgPool,
+    sender: &str,
+    commit: &str,
+    rule: &Rule,
+    digest: &str,
+) -> Result<OutcomeKind, sqlx::Error> {
+    let inserted = sqlx::query(
+        "insert into rule_registrations \
+         (source, path, id, version, kind, name, description, blocking, prompt, knowledge, \
+          digest, sender, commit_sha) \
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::text::json, $11, $12, $13) \
+         on conflict (source, path, id, version) do nothing",
+    )
+    .bind(&rule.source)
+    .bind(&rule.path)
+    .bind(&rule.id)
+    .bind(&rule.version)
+    .bind(rule.kind.as_str())
+    .bind(&rule.name)
+    .bind(&rule.description)
+    .bind(rule.blocking)
+    .bind(&rule.prompt)
+    .bind(
+        rule.knowledge
+            .as_deref()
+            .map(serde_json::value::RawValue::get),
+    )
+    .bind(digest)
+    .bind(sender)
+    .bind(commit)
+    .execute(pool)
+    .await?;
+    if inserted.rows_affected() == 1 {
+        return Ok(OutcomeKind::Created);
+    }
+
+    // The insert may have waited for a concurrent writer. A new statement
+    // can see the committed row that won the key, without updating it.
+    let stored_digest: String = sqlx::query_scalar(
+        "select digest from rule_registrations \
+         where source = $1 and path = $2 and id = $3 and version = $4",
+    )
+    .bind(&rule.source)
+    .bind(&rule.path)
+    .bind(&rule.id)
+    .bind(&rule.version)
+    .fetch_one(pool)
+    .await?;
+    Ok(if stored_digest == digest {
+        OutcomeKind::Unchanged
+    } else {
+        OutcomeKind::Conflict
+    })
 }
 
 #[derive(Serialize, FromRow)]

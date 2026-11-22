@@ -1,7 +1,8 @@
 use crate::attestation::Envelope;
 use crate::database;
+use crate::registration::{Outcome, RegistrationRequest};
 use axum::body::Bytes;
-use axum::extract::{Path, RawQuery, State};
+use axum::extract::{DefaultBodyLimit, Path, RawQuery, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router, serve};
@@ -14,6 +15,7 @@ use uuid::Uuid;
 
 const DEFAULT_PAGE_SIZE: i64 = 100;
 const MAX_PAGE_SIZE: i64 = 200;
+const MAX_REGISTRATION_BODY_BYTES: usize = 2 * 1024 * 1024;
 
 pub fn router(pool: PgPool) -> Router {
     Router::new()
@@ -22,6 +24,10 @@ pub fn router(pool: PgPool) -> Router {
         .route("/v0/attestations", post(ingest).get(history))
         .route("/v0/attestations/latest", get(latest))
         .route("/v0/attestations/{id}", get(read))
+        .route(
+            "/v0/rule-registrations",
+            post(register).layer(DefaultBodyLimit::max(MAX_REGISTRATION_BODY_BYTES)),
+        )
         .with_state(pool)
 }
 
@@ -53,6 +59,31 @@ async fn ingest(
         Ok(id) => Ok((StatusCode::CREATED, Json(json!({ "id": id.to_string() })))),
         Err(error) => Err(storage_failure(&error)),
     }
+}
+
+#[derive(serde::Serialize)]
+struct RegistrationReceipt {
+    outcomes: Vec<Outcome>,
+}
+
+async fn register(
+    State(pool): State<PgPool>,
+    body: Bytes,
+) -> Result<Json<RegistrationReceipt>, StatusCode> {
+    let (request, digests) =
+        RegistrationRequest::parse(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let mut outcomes = Vec::with_capacity(digests.len());
+    for (rule, digest) in request.rules.iter().zip(digests) {
+        let outcome =
+            database::register_rule(&pool, &request.sender, &request.commit, rule, &digest)
+                .await
+                .map_err(|error| {
+                    tracing::error!(%error, "cannot store the rule registration");
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        outcomes.push(Outcome { outcome, digest });
+    }
+    Ok(Json(RegistrationReceipt { outcomes }))
 }
 
 async fn latest(State(pool): State<PgPool>) -> Result<Json<Vec<database::Summary>>, StatusCode> {

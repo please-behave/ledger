@@ -1,0 +1,13 @@
+id: DEC-0004
+name: Append-only and Idempotent Rule Registration
+context: >-
+  A registration binds an owner-assigned rule version to the metadata used to
+  verify attestations. A gateway can retry after an interrupted delivery.
+decision: >-
+  Store the first registration for each source, path, ID and version. A match
+  on its canonical digest is unchanged, and a different digest is a conflict.
+  Preserve the first registration and its provenance in both cases. Evaluate
+  each rule independently once a batch has been validated.
+rationale: >-
+  Stable registrations preserve verification and let the gateway retry a batch
+  without overwriting evidence or losing progress.

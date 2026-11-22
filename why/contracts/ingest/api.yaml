@@ -14,3 +14,11 @@ contracts:
       - REQ-0014
       - REQ-0024
       - REQ-0025
+  - id: CON-0006
+    name: Rule Registration
+    document: rule-registration.md
+    schema: rule-registration.schema.json
+    requirements:
+      - REQ-0023
+      - REQ-0026
+      - REQ-0027

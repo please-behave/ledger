@@ -1,0 +1,13 @@
+id: REQ-0026
+name: Append-only Rule Registrations
+description: >-
+  For each submitted rule with a valid registration, the ledger must create a
+  registration only for a new source, path, ID and version. It must report
+  unchanged for a matching digest and conflict for a different digest without
+  changing the stored registration or preventing other rules from registering.
+rationale: >-
+  A rule version must retain the metadata and provenance that first identified it.
+decisions:
+  - DEC-0004
+  - why:DEC-0012
+  - why:DEC-0013
