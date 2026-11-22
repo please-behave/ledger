@@ -103,6 +103,7 @@ pub struct Summary {
     overall: String,
     warn_count: i64,
     not_run_count: i64,
+    result_count: i64,
 }
 
 #[derive(Serialize, FromRow)]
@@ -128,7 +129,9 @@ macro_rules! summary_query {
              (select count(*) from attestation_results r \
               where r.attestation_id = a.id and r.status = 'WARN') as warn_count, \
              (select count(*) from attestation_results r \
-              where r.attestation_id = a.id and r.status = 'NOT_RUN') as not_run_count \
+              where r.attestation_id = a.id and r.status = 'NOT_RUN') as not_run_count, \
+             (select count(*) from attestation_results r \
+              where r.attestation_id = a.id) as result_count \
              from ",
             $source
         )

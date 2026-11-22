@@ -1,0 +1,8 @@
+id: REQ-0020
+name: Result Count
+description: >-
+  The summary of an attestation must state how many results the attestation
+  holds.
+rationale: >-
+  Readers can put the warning and not-run counts into proportion without
+  opening the attestation.

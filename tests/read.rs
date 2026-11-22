@@ -124,6 +124,7 @@ async fn latest_is_empty_without_attestations() {
 }
 
 // REQ-0016: the summary counts WARN and NOT_RUN results.
+// REQ-0020: the summary counts all results.
 // REQ-0017: the attestation has the summary fields and its results in stored order.
 #[tokio::test(flavor = "multi_thread")]
 async fn counts_and_results_follow_the_stored_attestation() {
@@ -137,6 +138,7 @@ async fn counts_and_results_follow_the_stored_attestation() {
 
     assert_eq!(summaries[0]["warn_count"], 3);
     assert_eq!(summaries[0]["not_run_count"], 2);
+    assert_eq!(summaries[0]["result_count"], 7);
     assert_eq!(status, 200);
     assert_eq!(attestation["id"], id);
     assert_eq!(attestation["sender"], "ci");
@@ -146,6 +148,7 @@ async fn counts_and_results_follow_the_stored_attestation() {
     assert_eq!(attestation["overall"], "PASS");
     assert_eq!(attestation["warn_count"], 3);
     assert_eq!(attestation["not_run_count"], 2);
+    assert_eq!(attestation["result_count"], 7);
     assert!(
         attestation["received_at"]
             .as_str()
@@ -177,7 +180,7 @@ async fn counts_and_results_follow_the_stored_attestation() {
     assert_eq!(attestation["results"][0]["kind"], "check");
 }
 
-// REQ-0016: an attestation without results has zero counts and an empty result list.
+// REQ-0016, REQ-0020: an attestation without results has zero counts and an empty result list.
 // REQ-0017: its results are an empty list.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_attestation_without_results_has_zero_counts() {
@@ -190,7 +193,9 @@ async fn an_attestation_without_results_has_zero_counts() {
 
     assert_eq!(summaries[0]["warn_count"], 0);
     assert_eq!(summaries[0]["not_run_count"], 0);
+    assert_eq!(summaries[0]["result_count"], 0);
     assert_eq!(status, 200);
+    assert_eq!(attestation["result_count"], 0);
     assert_eq!(attestation["results"], json!([]));
 }
 
