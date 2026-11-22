@@ -1,0 +1,16 @@
+id: REQ-0030
+name: Registered Rule Version History
+description: >-
+  The ledger must return every registered version of a rule identified by
+  source, path and ID in ascending numeric version order, with the complete
+  registered content, digest, registering commit and time. It must preserve
+  stored texts, leave registrations unchanged and return not found for an
+  unknown identity.
+rationale: >-
+  The cockpit can display the registered material and provenance for any
+  version of a rule.
+decisions:
+  - why:DEC-0010
+  - why:DEC-0011
+  - why:DEC-0012
+  - why:DEC-0014

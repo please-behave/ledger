@@ -82,7 +82,7 @@ fn rule_objects<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<Rule>,
 }
 
 // Serde's derived struct visitors also accept positional arrays.
-struct JsonObject<T>(T);
+pub(crate) struct JsonObject<T>(pub T);
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for JsonObject<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {

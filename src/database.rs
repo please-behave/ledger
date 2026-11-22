@@ -3,8 +3,10 @@ use crate::registration::{OutcomeKind, Rule};
 use anyhow::{Context, Result};
 use serde::Serialize;
 use serde_json::Value;
+use serde_json::value::RawValue;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::PgPoolOptions;
+use sqlx::types::Json;
 use sqlx::{FromRow, PgPool};
 use std::time::Duration;
 use uuid::Uuid;
@@ -155,6 +157,76 @@ pub(crate) async fn register_rule(
     } else {
         OutcomeKind::Conflict
     })
+}
+
+#[derive(Serialize, FromRow)]
+pub(crate) struct RuleSummary {
+    source: String,
+    path: String,
+    id: String,
+    version: String,
+    kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+}
+
+#[derive(Serialize, FromRow)]
+pub(crate) struct RuleVersion {
+    #[serde(flatten)]
+    #[sqlx(flatten)]
+    rule: RuleSummary,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    blocking: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prompt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    knowledge: Option<Json<Box<RawValue>>>,
+    digest: String,
+    commit: String,
+    registered_at: String,
+}
+
+pub(crate) async fn registered_rules(
+    pool: &PgPool,
+    before: Option<(&str, &str, &str)>,
+    limit: i64,
+) -> Result<Vec<RuleSummary>, sqlx::Error> {
+    sqlx::query_as(
+        "select distinct on (source, path, id) source, path, id, version, kind, name, description \
+         from rule_registrations \
+         where $1::text is null or (source, path, id) < ($1, $2, $3) \
+         order by source desc, path desc, id desc, \
+                  split_part(version, '.', 1)::numeric desc, split_part(version, '.', 2)::numeric desc \
+         limit $4",
+    )
+    .bind(before.map(|(source, _, _)| source))
+    .bind(before.map(|(_, path, _)| path))
+    .bind(before.map(|(_, _, id)| id))
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
+pub(crate) async fn registered_rule_versions(
+    pool: &PgPool,
+    source: &str,
+    path: &str,
+    id: &str,
+) -> Result<Vec<RuleVersion>, sqlx::Error> {
+    sqlx::query_as(
+        "select source, path, id, version, kind, name, description, blocking, prompt, knowledge, \
+                digest, commit_sha as commit, \
+                to_char(registered_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') as registered_at \
+         from rule_registrations where source = $1 and path = $2 and id = $3 \
+         order by split_part(version, '.', 1)::numeric, split_part(version, '.', 2)::numeric",
+    )
+    .bind(source)
+    .bind(path)
+    .bind(id)
+    .fetch_all(pool)
+    .await
 }
 
 #[derive(Serialize, FromRow)]

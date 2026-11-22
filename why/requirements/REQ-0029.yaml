@@ -1,0 +1,13 @@
+id: REQ-0029
+name: Paged Registered Rules
+description: >-
+  The ledger must provide a paged read of registered rules that returns each
+  source, path and ID once, with the numerically greatest registered version
+  and that version's kind, name and description. The read must preserve stored
+  texts and leave registrations unchanged.
+rationale: >-
+  The cockpit can browse the rule registry without reading every version.
+decisions:
+  - why:DEC-0010
+  - why:DEC-0011
+  - why:DEC-0012

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Registered rules",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/summary",
+    "unevaluatedProperties": false
+  },
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "required": ["source", "path", "id", "version", "kind"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "path": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "version": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "kind": { "enum": ["check", "review"] },
+        "name": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    }
+  }
+}

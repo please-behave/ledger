@@ -32,3 +32,15 @@ contracts:
       - REQ-0020
       - REQ-0021
       - REQ-0022
+  - id: CON-0007
+    name: Registered Rules
+    document: rules.md
+    schema: rules.schema.json
+    requirements:
+      - REQ-0029
+  - id: CON-0008
+    name: Registered Rule Versions
+    document: rule.md
+    schema: rule.schema.json
+    requirements:
+      - REQ-0030

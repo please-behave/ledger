@@ -1,8 +1,8 @@
-use crate::attestation::Envelope;
+use crate::attestation::{Envelope, valid_rule_identity};
 use crate::database;
-use crate::registration::{Outcome, RegistrationRequest};
+use crate::registration::{JsonObject, Outcome, RegistrationRequest};
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Path, RawQuery, State};
+use axum::extract::{DefaultBodyLimit, Path, Query, RawQuery, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router, serve};
@@ -24,6 +24,8 @@ pub fn router(pool: PgPool) -> Router {
         .route("/v0/attestations", post(ingest).get(history))
         .route("/v0/attestations/latest", get(latest))
         .route("/v0/attestations/{id}", get(read))
+        .route("/v0/rules", get(rules))
+        .route("/v0/rules/detail", get(rule_detail))
         .route(
             "/v0/rule-registrations",
             post(register).layer(DefaultBodyLimit::max(MAX_REGISTRATION_BODY_BYTES)),
@@ -113,10 +115,10 @@ impl Page {
                 _ => return None,
             }
         }
-        let limit = limit.unwrap_or(DEFAULT_PAGE_SIZE);
-        (1..=MAX_PAGE_SIZE)
-            .contains(&limit)
-            .then_some(Self { limit, before })
+        Some(Self {
+            limit: page_limit(limit).ok()?,
+            before,
+        })
     }
 }
 
@@ -144,8 +146,74 @@ async fn read(
 }
 
 fn read_failure(error: &sqlx::Error) -> StatusCode {
-    tracing::error!(%error, "cannot read the attestations");
+    tracing::error!(%error, "cannot read from the ledger");
     StatusCode::INTERNAL_SERVER_ERROR
+}
+
+fn page_limit(limit: Option<i64>) -> Result<i64, StatusCode> {
+    let limit = limit.unwrap_or(DEFAULT_PAGE_SIZE);
+    (1..=MAX_PAGE_SIZE)
+        .contains(&limit)
+        .then_some(limit)
+        .ok_or(StatusCode::BAD_REQUEST)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RulePage {
+    limit: Option<i64>,
+    before: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RuleIdentity {
+    source: String,
+    path: String,
+    id: String,
+}
+
+impl RuleIdentity {
+    fn parts(&self) -> Result<(&str, &str, &str), StatusCode> {
+        valid_rule_identity(&self.source, &self.path, &self.id)
+            .then_some((self.source.as_str(), self.path.as_str(), self.id.as_str()))
+            .ok_or(StatusCode::BAD_REQUEST)
+    }
+}
+
+async fn rules(
+    State(pool): State<PgPool>,
+    Query(page): Query<RulePage>,
+) -> Result<Json<Vec<database::RuleSummary>>, StatusCode> {
+    let limit = page_limit(page.limit)?;
+    let before = page
+        .before
+        .as_deref()
+        .map(serde_json::from_str::<JsonObject<RuleIdentity>>)
+        .transpose()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let before = before
+        .as_ref()
+        .map(|JsonObject(rule)| rule.parts())
+        .transpose()?;
+    database::registered_rules(&pool, before, limit)
+        .await
+        .map(Json)
+        .map_err(|error| read_failure(&error))
+}
+
+async fn rule_detail(
+    State(pool): State<PgPool>,
+    Query(identity): Query<RuleIdentity>,
+) -> Result<Json<Vec<database::RuleVersion>>, StatusCode> {
+    let (source, path, id) = identity.parts()?;
+    let versions = database::registered_rule_versions(&pool, source, path, id)
+        .await
+        .map_err(|error| read_failure(&error))?;
+    if versions.is_empty() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    Ok(Json(versions))
 }
 
 fn storage_failure(error: &sqlx::Error) -> StatusCode {
