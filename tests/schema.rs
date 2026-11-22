@@ -91,6 +91,7 @@ async fn migrate_creates_the_schema_and_is_idempotent() {
 
     assert!(exists(&pool, "attestations").await);
     assert!(exists(&pool, "attestation_results").await);
+    assert!(exists(&pool, "rule_registrations").await);
     for index in [
         "attestations_latest_idx",
         "attestations_repository_commit_idx",
@@ -148,6 +149,61 @@ async fn rule_identity_migrations_preserve_existing_rows_and_legacy_inserts() {
     .expect("read the lookup index");
     assert!(valid, "the concurrent index build completed");
     assert!(definition.contains("(rule_source, rule_path, rule_local_id, rule_version)"));
+}
+
+#[tokio::test]
+async fn rule_registry_migration_preserves_attestations_and_keys_versions() {
+    const MIGRATIONS: Migrator = sqlx::migrate!();
+    const PRE_REGISTRY_SCHEMA: i64 = 20261122000001;
+    let database = postgres().await;
+    let pool = ledger::database::connect(&database.url)
+        .await
+        .expect("connect");
+    MIGRATIONS
+        .run_to(PRE_REGISTRY_SCHEMA, &pool)
+        .await
+        .expect("apply the preceding schema");
+    insert_attestation(&pool, &[])
+        .await
+        .expect("an existing attestation");
+    insert_result(&pool, &[]).await.expect("an existing result");
+    assert!(!exists(&pool, "rule_registrations").await);
+
+    ledger::database::migrate(&pool)
+        .await
+        .expect("add the rule registry");
+    insert_attestation(&pool, &[("id", OTHER_ID)])
+        .await
+        .expect("an attestation inserted by an older build");
+    insert_result(&pool, &[("attestation_id", OTHER_ID)])
+        .await
+        .expect("a result inserted by an older build");
+    let positions: Vec<i32> = sqlx::query_scalar("select position from attestation_results")
+        .fetch_all(&pool)
+        .await
+        .expect("both attestations retain their results");
+    assert_eq!(positions, [0, 0]);
+
+    let insert_version = |version: &'static str| {
+        sqlx::query_scalar::<_, bool>(
+            "insert into rule_registrations \
+             (source, path, id, version, kind, digest, sender, commit_sha) \
+             values ($1, $2, $3, $4, 'check', $5, $6, $7) \
+             returning registered_at is not null",
+        )
+        .bind("github.com/owner/name")
+        .bind("rules/format")
+        .bind("format")
+        .bind(version)
+        .bind("v1:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+        .bind("ci")
+        .bind("0123456789abcdef0123456789abcdef01234567")
+        .fetch_one(&pool)
+    };
+    assert!(insert_version("1.0").await.expect("the first version"));
+    assert!(insert_version("1.1").await.expect("a second version"));
+    let duplicate = insert_version("1.0").await.expect_err("the key is unique");
+    assert!(matches!(duplicate, sqlx::Error::Database(error) if error.is_unique_violation()));
 }
 
 #[tokio::test]
