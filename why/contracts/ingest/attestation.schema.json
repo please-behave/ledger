@@ -32,7 +32,24 @@
             "properties": {
               "id": { "type": "string" },
               "kind": { "enum": ["check", "review", "integrity"] },
-              "status": { "enum": ["PASS", "FAIL", "ERROR", "NOT_RUN", "WARN"] }
+              "status": { "enum": ["PASS", "FAIL", "ERROR", "NOT_RUN", "WARN"] },
+              "rule": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["source", "path", "id"],
+                "dependentRequired": { "version": ["digest"], "digest": ["version"] },
+                "properties": {
+                  "source": { "type": "string", "minLength": 1, "maxLength": 256, "not": { "pattern": "\\u0000" } },
+                  "path": { "type": "string", "minLength": 1, "maxLength": 256, "not": { "pattern": "\\u0000" } },
+                  "id": { "type": "string", "minLength": 1, "maxLength": 128, "not": { "pattern": "\\u0000" } },
+                  "version": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                  },
+                  "digest": { "type": "string", "minLength": 1, "maxLength": 128, "not": { "pattern": "\\u0000" } }
+                }
+              }
             }
           }
         }

@@ -28,6 +28,16 @@ fn envelope() -> Value {
     })
 }
 
+fn rule_metadata() -> Value {
+    json!({
+        "source": "github.com/owner/rules",
+        "path": "checks/format",
+        "id": "format",
+        "version": "2.0",
+        "digest": "v1:sha256:example"
+    })
+}
+
 async fn start_service(pool: PgPool) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let address = listener.local_addr().expect("address");
@@ -64,6 +74,7 @@ fn id_of(body: &str) -> Uuid {
 
 // REQ-0010: a valid envelope is appended with all of its results.
 // REQ-0013: the received envelope is stored as received.
+// REQ-0024: an envelope with no rule metadata is still accepted.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_valid_envelope_is_stored_with_its_results() {
     let postgres = postgres().await;
@@ -114,6 +125,104 @@ async fn a_valid_envelope_is_stored_with_its_results() {
             expected
         );
     }
+}
+
+// REQ-0013: the complete envelope is preserved.
+// REQ-0024: a result can carry an identity with or without a version and digest.
+// REQ-0025: result columns preserve the supplied metadata and the run-scoped ID.
+#[tokio::test(flavor = "multi_thread")]
+async fn optional_rule_metadata_is_preserved_in_rows_and_the_document() {
+    let postgres = postgres().await;
+    let pool = migrated_pool(&postgres).await;
+    let address = start_service(pool.clone()).await;
+    let versioned = rule_metadata();
+    let unversioned = json!({
+        "source": "github.com/owner/another-ruleset",
+        "path": "reviews/changes",
+        "id": "changes"
+    });
+    let mut document = envelope();
+    document["attestation"]["results"][0]["id"] = json!("import/format");
+    document["attestation"]["results"][0]["rule"] = versioned.clone();
+    document["attestation"]["results"][1]["rule"] = unversioned.clone();
+
+    let (status, body) = ingest(address, document.to_string()).await;
+    assert_eq!(status, 201);
+    let id = id_of(&body);
+    let stored_document: Value =
+        sqlx::query_scalar("select document from attestations where id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .expect("read the stored document");
+    assert_eq!(stored_document, document);
+
+    let results: Vec<(String, Value)> = sqlx::query_as(
+        "select rule_id, jsonb_strip_nulls(jsonb_build_object(\
+         'source', rule_source, 'path', rule_path, 'id', rule_local_id, \
+         'version', rule_version, 'digest', rule_digest)) \
+         from attestation_results where attestation_id = $1 order by position",
+    )
+    .bind(id)
+    .fetch_all(&pool)
+    .await
+    .expect("read the result metadata");
+    assert_eq!(
+        results,
+        [
+            ("import/format".to_owned(), versioned),
+            ("review".to_owned(), unversioned),
+            ("hooks".to_owned(), json!({})),
+        ]
+    );
+}
+
+// REQ-0011, REQ-0024: metadata outside the contract is rejected atomically.
+#[tokio::test(flavor = "multi_thread")]
+async fn invalid_rule_metadata_is_rejected_and_leaves_nothing_behind() {
+    let postgres = postgres().await;
+    let pool = migrated_pool(&postgres).await;
+    let address = start_service(pool.clone()).await;
+    let mut invalid_rules = vec![Value::Null, json!({})];
+    for field in ["source", "path", "id", "version", "digest"] {
+        let mut rule = rule_metadata();
+        rule.as_object_mut().expect("a rule object").remove(field);
+        invalid_rules.push(rule);
+    }
+    for (field, max) in [("source", 256), ("path", 256), ("id", 128), ("digest", 128)] {
+        for value in [String::new(), "界".repeat(max + 1), "bad\0value".to_owned()] {
+            let mut rule = rule_metadata();
+            rule[field] = json!(value);
+            invalid_rules.push(rule);
+        }
+    }
+    for version in [
+        json!(null),
+        json!(1.2),
+        json!("01.2"),
+        json!("1.02"),
+        json!("1.2.3"),
+        json!("1.2\n"),
+        json!(format!("1.{}", "2".repeat(63))),
+    ] {
+        let mut rule = rule_metadata();
+        rule["version"] = version;
+        invalid_rules.push(rule);
+    }
+    let mut null_digest = rule_metadata();
+    null_digest["digest"] = Value::Null;
+    invalid_rules.push(null_digest);
+    let mut unknown_field = rule_metadata();
+    unknown_field["extra"] = json!(true);
+    invalid_rules.push(unknown_field);
+
+    for rule in invalid_rules {
+        let mut document = envelope();
+        document["attestation"]["results"][1]["rule"] = rule.clone();
+        let (status, _) = ingest(address, document.to_string()).await;
+        assert_eq!(status, 400, "rule metadata {rule}");
+    }
+    assert_nothing_stored(&pool).await;
 }
 
 // REQ-0011: an invalid body is answered with 400 and leaves nothing behind.

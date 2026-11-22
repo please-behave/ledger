@@ -1,0 +1,11 @@
+id: REQ-0024
+name: Optional Rule Metadata on Ingest
+description: >-
+  A result in an ingest envelope may omit rule metadata. If present, its
+  rule metadata must satisfy the Attestation Envelope contract.
+rationale: >-
+  Existing producers can keep reporting results while producers with stable
+  rule identities can supply evidence for later verification.
+decisions:
+  - why:DEC-0010
+  - why:DEC-0011

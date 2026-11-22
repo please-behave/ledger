@@ -76,15 +76,23 @@ pub async fn append_attestation(
     .execute(&mut *transaction)
     .await?;
     for (position, result) in (0_i32..).zip(&attestation.results) {
+        let rule = result.rule.as_ref();
         sqlx::query(
-            "insert into attestation_results (attestation_id, position, rule_id, kind, status) \
-             values ($1, $2, $3, $4, $5)",
+            "insert into attestation_results \
+             (attestation_id, position, rule_id, kind, status, rule_source, rule_path, \
+              rule_local_id, rule_version, rule_digest) \
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
         )
         .bind(id)
         .bind(position)
         .bind(&result.id)
         .bind(result.kind.as_str())
         .bind(result.status.as_str())
+        .bind(rule.map(|rule| rule.source.as_str()))
+        .bind(rule.map(|rule| rule.path.as_str()))
+        .bind(rule.map(|rule| rule.id.as_str()))
+        .bind(rule.and_then(|rule| rule.version.as_deref()))
+        .bind(rule.and_then(|rule| rule.digest.as_deref()))
         .execute(&mut *transaction)
         .await?;
     }

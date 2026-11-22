@@ -1,0 +1,10 @@
+id: REQ-0025
+name: Store Rule Metadata with Results
+description: >-
+  The ledger must retain supplied rule metadata on the corresponding result
+  row alongside the run-scoped rule ID, leaving omitted metadata unset.
+rationale: >-
+  The stable identity and version let the ledger look up a registration
+  independently of the run-scoped ID.
+decisions:
+  - why:DEC-0013

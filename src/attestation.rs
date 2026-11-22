@@ -1,4 +1,11 @@
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, de::Error};
+
+// The indexed fields must fit a PostgreSQL B-tree entry even in UTF-8.
+const MAX_RULE_SOURCE_CHARS: usize = 256;
+const MAX_RULE_PATH_CHARS: usize = 256;
+const MAX_RULE_ID_CHARS: usize = 128;
+const MAX_RULE_VERSION_CHARS: usize = 64;
+const MAX_RULE_DIGEST_CHARS: usize = 128;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -24,6 +31,64 @@ pub struct RuleResult {
     pub id: String,
     pub kind: Kind,
     pub status: Status,
+    #[serde(default, deserialize_with = "deserialize_rule")]
+    pub rule: Option<RuleMetadata>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuleMetadata {
+    pub source: String,
+    pub path: String,
+    pub id: String,
+    #[serde(default, deserialize_with = "deserialize_present_string")]
+    pub version: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_present_string")]
+    pub digest: Option<String>,
+}
+
+fn deserialize_present_string<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    String::deserialize(deserializer).map(Some)
+}
+
+fn deserialize_rule<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<RuleMetadata>, D::Error> {
+    let rule = RuleMetadata::deserialize(deserializer)?;
+    let valid_version_and_digest = match (&rule.version, &rule.digest) {
+        (None, None) => true,
+        (Some(version), Some(digest)) => {
+            valid_version(version) && bounded_text(digest, MAX_RULE_DIGEST_CHARS)
+        }
+        _ => false,
+    };
+    if bounded_text(&rule.source, MAX_RULE_SOURCE_CHARS)
+        && bounded_text(&rule.path, MAX_RULE_PATH_CHARS)
+        && bounded_text(&rule.id, MAX_RULE_ID_CHARS)
+        && valid_version_and_digest
+    {
+        Ok(Some(rule))
+    } else {
+        Err(D::Error::custom("invalid rule metadata"))
+    }
+}
+
+fn bounded_text(value: &str, max_chars: usize) -> bool {
+    !value.is_empty() && value.chars().nth(max_chars).is_none() && !value.contains('\0')
+}
+
+fn valid_version(version: &str) -> bool {
+    let valid_component = |part: &str| {
+        !part.is_empty()
+            && (part == "0" || !part.starts_with('0'))
+            && part.bytes().all(|byte| byte.is_ascii_digit())
+    };
+    version.len() <= MAX_RULE_VERSION_CHARS
+        && version
+            .split_once('.')
+            .is_some_and(|(major, minor)| valid_component(major) && valid_component(minor))
 }
 
 #[derive(Clone, Copy, Deserialize)]
