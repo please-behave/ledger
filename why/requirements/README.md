@@ -1,6 +1,6 @@
 # Requirements
 
-A requirement is one binding, verifiable statement about what the ledger must do or be. The [schema](schema.json) defines its fields.
+A requirement is one binding, verifiable statement about what the ledger must do or be. The [requirement schema](https://github.com/please-behave/why/blob/main/standard/requirement.schema.json) of the Why standard defines its fields.
 
 - **One statement.** It states one condition that can be verified on its own.
 - **Observable.** It describes behavior or a property visible from outside, not a function, a type or a file.

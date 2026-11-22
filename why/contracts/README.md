@@ -4,7 +4,7 @@ An API is a compatibility boundary between a producer and its consumers. A contr
 
 ## Representation
 
-Each API directory contains an `api.yaml`, validated by [schema.json](schema.json). The index records the stable `API-NNNN` ID, the name, the compatibility version and the contracts. Each contract records a globally unique, stable `CON-NNNN` ID, a name, a Markdown document, an optional structural JSON schema and the requirements it specifies. IDs are never reused. Document and schema paths are relative to the index, stay inside the directory and are not reached through symbolic links.
+Each API directory contains an `api.yaml`, validated by the [contract index schema](https://github.com/please-behave/why/blob/main/standard/contract-index.schema.json) of the Why standard. The index records the stable `API-NNNN` ID, the name, the compatibility version and the contracts. Each contract records a globally unique, stable `CON-NNNN` ID, a name, a Markdown document, an optional structural JSON schema and the requirements it specifies. IDs are never reused. Document and schema paths are relative to the index, stay inside the directory and are not reached through symbolic links.
 
 ## Authority
 

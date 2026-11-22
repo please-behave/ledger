@@ -1,0 +1,6 @@
+repository:
+  alias: ledger
+  source: github:please-behave/ledger
+linked:
+  - alias: why
+    source: github:please-behave/why
