@@ -91,6 +91,10 @@
           "id": {
             "type": "string"
           },
+          "name": {
+            "type": "string",
+            "description": "The stored name of the matching registered rule version, when available."
+          },
           "kind": {
             "enum": [
               "check",

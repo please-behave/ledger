@@ -25,3 +25,7 @@ Every result has a `verification` object. The ledger looks up the stored rule so
 | `{"status":"unverified","reason":"unregistered"}` | The result lacks an identity, version or digest, or there is no registration for that identity and version. |
 
 The ledger computes verification on each read. A later registration can resolve an earlier result while the attestation and its results stay as reported.
+
+## Registered rule name
+
+A result includes `name` when the registration matching its stored rule source, path, local ID and version has a name. The ledger returns the name as stored, regardless of the digest comparison. It omits the field when there is no matching registration or the registration has no name. The consumer must escape this untrusted text when displaying it.

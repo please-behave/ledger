@@ -181,19 +181,21 @@ async fn counts_and_results_follow_the_stored_attestation() {
 }
 
 // REQ-0028: a later registration resolves results against the full identity and version.
+// REQ-0031: the registered name is optional and independent of verification.
 #[tokio::test(flavor = "multi_thread")]
 async fn verification_reflects_a_registration_that_arrives_after_ingest() {
     let postgres = postgres().await;
     let address = start_service(migrated_pool(&postgres).await).await;
     let vectors: Value =
         serde_json::from_str(include_str!("../why/contracts/rule-digest/vectors.json")).unwrap();
-    let registration = &vectors[0]["input"];
+    let unnamed = &vectors[0]["input"];
+    let named = &vectors[1]["input"];
     let matching = json!({
-        "source": registration["source"],
-        "path": registration["path"],
-        "id": registration["id"],
-        "version": registration["version"],
-        "digest": vectors[0]["digest"],
+        "source": named["source"],
+        "path": named["path"],
+        "id": named["id"],
+        "version": named["version"],
+        "digest": vectors[1]["digest"],
     });
     let variants = [
         ("digest", "different-digest"),
@@ -202,7 +204,7 @@ async fn verification_reflects_a_registration_that_arrives_after_ingest() {
         ("id", "other"),
         ("version", "1.1"),
     ];
-    let mut report = envelope("github.com/example/consumer", &["ci"], COMMIT, &["PASS"; 8]);
+    let mut report = envelope("github.com/example/consumer", &["ci"], COMMIT, &["PASS"; 9]);
     let results = report["attestation"]["results"].as_array_mut().unwrap();
     results[0]["rule"] = matching.clone();
     for (result, (field, value)) in results[1..].iter_mut().zip(variants) {
@@ -210,9 +212,16 @@ async fn verification_reflects_a_registration_that_arrives_after_ingest() {
         result["rule"][field] = json!(value);
     }
     results[6]["rule"] = json!({
-        "source": registration["source"],
-        "path": registration["path"],
-        "id": registration["id"],
+        "source": named["source"],
+        "path": named["path"],
+        "id": named["id"],
+    });
+    results[8]["rule"] = json!({
+        "source": unnamed["source"],
+        "path": unnamed["path"],
+        "id": unnamed["id"],
+        "version": unnamed["version"],
+        "digest": vectors[0]["digest"],
     });
     let id = ingest(address, report).await;
 
@@ -221,10 +230,11 @@ async fn verification_reflects_a_registration_that_arrives_after_ingest() {
     let unregistered = json!({"status": "unverified", "reason": "unregistered"});
     for result in before["results"].as_array().unwrap() {
         assert_eq!(result["verification"], unregistered);
+        assert!(result.get("name").is_none());
     }
 
     let request =
-        json!({"sender": "catalog-ci", "commit": COMMIT, "rules": [registration]}).to_string();
+        json!({"sender": "catalog-ci", "commit": COMMIT, "rules": [unnamed, named]}).to_string();
     let (status, receipt) =
         tokio::task::spawn_blocking(move || post(address, "/v0/rule-registrations", &request))
             .await
@@ -233,13 +243,19 @@ async fn verification_reflects_a_registration_that_arrives_after_ingest() {
     let receipt: Value = serde_json::from_str(&receipt).unwrap();
     assert_eq!(
         receipt["outcomes"],
-        json!([{"outcome": "created", "digest": vectors[0]["digest"]}])
+        json!([
+            {"outcome": "created", "digest": vectors[0]["digest"]},
+            {"outcome": "created", "digest": vectors[1]["digest"]},
+        ])
     );
 
     let (status, after) = read_json(address, format!("/v0/attestations/{id}")).await;
     assert_eq!(status, 200);
     before["results"][0]["verification"] = json!({"status": "verified"});
+    before["results"][0]["name"] = named["name"].clone();
     before["results"][1]["verification"] = json!({"status": "unverified", "reason": "mismatch"});
+    before["results"][1]["name"] = named["name"].clone();
+    before["results"][8]["verification"] = json!({"status": "verified"});
     assert_eq!(after, before);
 }
 

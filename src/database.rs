@@ -248,6 +248,8 @@ pub struct ResultRow {
     id: String,
     kind: String,
     status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
     verification: Verification,
 }
 
@@ -327,8 +329,8 @@ pub async fn attestation(
     let Some(summary) = summary else {
         return Ok(None);
     };
-    let rows: Vec<(String, String, String, Option<bool>)> = sqlx::query_as(
-        "select r.rule_id, r.kind, r.status, r.rule_digest = registration.digest \
+    let rows = sqlx::query_as(
+        "select r.rule_id, r.kind, r.status, registration.name, r.rule_digest = registration.digest \
          from attestation_results r \
          left join rule_registrations registration \
            on registration.source = r.rule_source and registration.path = r.rule_path \
@@ -340,10 +342,11 @@ pub async fn attestation(
     .await?;
     let results = rows
         .into_iter()
-        .map(|(id, kind, status, digest_matches)| ResultRow {
+        .map(|(id, kind, status, name, digest_matches)| ResultRow {
             id,
             kind,
             status,
+            name,
             verification: match digest_matches {
                 Some(true) => Verification::Verified,
                 Some(false) => Verification::Unverified(UnverifiedReason::Mismatch),
