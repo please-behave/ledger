@@ -250,7 +250,18 @@ pub struct ResultRow {
     status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rule: Option<ResultRule>,
     verification: Verification,
+}
+
+#[derive(Serialize)]
+struct ResultRule {
+    source: String,
+    path: String,
+    id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -330,7 +341,8 @@ pub async fn attestation(
         return Ok(None);
     };
     let rows = sqlx::query_as(
-        "select r.rule_id, r.kind, r.status, registration.name, r.rule_digest = registration.digest \
+        "select r.rule_id, r.kind, r.status, registration.name, r.rule_digest = registration.digest, \
+                r.rule_source, r.rule_path, r.rule_local_id, r.rule_version \
          from attestation_results r \
          left join rule_registrations registration \
            on registration.source = r.rule_source and registration.path = r.rule_path \
@@ -342,17 +354,28 @@ pub async fn attestation(
     .await?;
     let results = rows
         .into_iter()
-        .map(|(id, kind, status, name, digest_matches)| ResultRow {
-            id,
-            kind,
-            status,
-            name,
-            verification: match digest_matches {
-                Some(true) => Verification::Verified,
-                Some(false) => Verification::Unverified(UnverifiedReason::Mismatch),
-                None => Verification::Unverified(UnverifiedReason::Unregistered),
+        .map(
+            |(id, kind, status, name, digest_matches, source, path, local_id, version)| ResultRow {
+                id,
+                kind,
+                status,
+                name,
+                rule: match (source, path, local_id) {
+                    (Some(source), Some(path), Some(id)) => Some(ResultRule {
+                        source,
+                        path,
+                        id,
+                        version,
+                    }),
+                    _ => None,
+                },
+                verification: match digest_matches {
+                    Some(true) => Verification::Verified,
+                    Some(false) => Verification::Unverified(UnverifiedReason::Mismatch),
+                    None => Verification::Unverified(UnverifiedReason::Unregistered),
+                },
             },
-        })
+        )
         .collect();
     Ok(Some(StoredAttestation { summary, results }))
 }

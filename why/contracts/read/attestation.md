@@ -14,6 +14,15 @@ Producer: the ledger. Consumer: the cockpit. All paths of this API start with `/
 
 The read changes nothing.
 
+## Stored rule identity
+
+When a result has a stored identity, the ledger returns it in `rule` with
+`source`, `path` and `id` (the rule's local ID). The result's top-level `id`
+is the run-scoped rule ID. The ledger includes `rule.version` when stored and
+omits the digest. It omits `rule` when no identity was reported. The ledger
+returns the values as stored, and the consumer must escape them when using
+them in links or displaying them.
+
 ## Result verification
 
 Every result has a `verification` object. The ledger looks up the stored rule source, path, local ID and version in the registry and compares the reported digest with the registered digest.

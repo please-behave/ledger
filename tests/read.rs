@@ -180,6 +180,32 @@ async fn counts_and_results_follow_the_stored_attestation() {
     assert_eq!(attestation["results"][0]["kind"], "check");
 }
 
+// REQ-0032: the detail read returns stored identities with optional versions.
+#[tokio::test(flavor = "multi_thread")]
+async fn results_return_the_stored_rule_identity_when_present() {
+    let postgres = postgres().await;
+    let address = start_service(migrated_pool(&postgres).await).await;
+    let mut report = envelope("r", &["ci"], COMMIT, &["PASS"; 3]);
+    let identity =
+        json!({"source": "example.org/Org/Rules", "path": "rules/é & #", "id": "Check<1>"});
+    let mut versioned_identity = identity.clone();
+    versioned_identity["version"] = json!("0.12");
+    report["attestation"]["results"][0]["rule"] = versioned_identity.clone();
+    report["attestation"]["results"][0]["rule"]["digest"] = json!("reported-digest");
+    report["attestation"]["results"][1]["rule"] = identity.clone();
+    let id = ingest(address, report).await;
+
+    let (status, attestation) = read_json(address, format!("/v0/attestations/{id}")).await;
+
+    assert_eq!(status, 200);
+    let results = attestation["results"].as_array().expect("results");
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0]["id"], "rule-0");
+    assert_eq!(results[0]["rule"], versioned_identity);
+    assert_eq!(results[1]["rule"], identity);
+    assert!(results[2].get("rule").is_none());
+}
+
 // REQ-0028: a later registration resolves results against the full identity and version.
 // REQ-0031: the registered name is optional and independent of verification.
 #[tokio::test(flavor = "multi_thread")]

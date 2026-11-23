@@ -95,6 +95,18 @@
             "type": "string",
             "description": "The stored name of the matching registered rule version, when available."
           },
+          "rule": {
+            "type": "object",
+            "description": "The reported rule identity, when stored.",
+            "additionalProperties": false,
+            "required": ["source", "path", "id"],
+            "properties": {
+              "source": { "type": "string" },
+              "path": { "type": "string" },
+              "id": { "type": "string", "description": "The rule's local ID." },
+              "version": { "type": "string" }
+            }
+          },
           "kind": {
             "enum": [
               "check",
