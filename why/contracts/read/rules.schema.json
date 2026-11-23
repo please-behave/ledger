@@ -4,9 +4,34 @@
   "type": "array",
   "items": {
     "$ref": "#/$defs/summary",
+    "required": ["scan"],
+    "properties": {
+      "scan": { "$ref": "#/$defs/scan" }
+    },
     "unevaluatedProperties": false
   },
   "$defs": {
+    "cursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "path", "id", "version", "scan"],
+      "properties": {
+        "source": { "$ref": "#/$defs/summary/properties/source" },
+        "path": { "$ref": "#/$defs/summary/properties/path" },
+        "id": { "$ref": "#/$defs/summary/properties/id" },
+        "version": { "$ref": "#/$defs/summary/properties/version" },
+        "scan": { "$ref": "#/$defs/scan" }
+      }
+    },
+    "scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["through", "registrations"],
+      "properties": {
+        "through": { "type": "integer" },
+        "registrations": { "type": "integer", "minimum": 1 }
+      }
+    },
     "summary": {
       "type": "object",
       "required": ["source", "path", "id", "version", "kind"],

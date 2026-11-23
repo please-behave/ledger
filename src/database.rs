@@ -1,7 +1,7 @@
 use crate::attestation::Envelope;
 use crate::registration::{OutcomeKind, Rule};
 use anyhow::{Context, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_json::value::RawValue;
 use sqlx::migrate::Migrator;
@@ -188,25 +188,110 @@ pub(crate) struct RuleVersion {
     registered_at: String,
 }
 
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RuleScan {
+    through: i64,
+    pub registrations: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RuleCursor {
+    pub source: String,
+    pub path: String,
+    pub id: String,
+    pub version: String,
+    pub scan: RuleScan,
+}
+
+#[derive(Serialize)]
+pub(crate) struct ListedRule {
+    #[serde(flatten)]
+    summary: RuleSummary,
+    scan: RuleScan,
+}
+
 pub(crate) async fn registered_rules(
     pool: &PgPool,
-    before: Option<(&str, &str, &str)>,
+    before: Option<&RuleCursor>,
     limit: i64,
-) -> Result<Vec<RuleSummary>, sqlx::Error> {
-    sqlx::query_as(
-        "select distinct on (source, path, id) source, path, id, version, kind, name, description \
+) -> Result<Option<Vec<ListedRule>>, sqlx::Error> {
+    let mut transaction = pool.begin().await?;
+    sqlx::query("set transaction isolation level repeatable read read only")
+        .execute(&mut *transaction)
+        .await?;
+
+    // A scan uses an append-only prefix of the registrations. Its count
+    // detects a late commit whose registration time falls inside the prefix.
+    let (through, registrations, anchor): (Option<i64>, i64, Option<String>) = sqlx::query_as(
+        "select (extract(epoch from max(registered_at)) * 1000000)::bigint, count(*), \
+                (select case when version = $5 then coalesce(name, id) end \
+                 from rule_registrations where source = $2 and path = $3 and id = $4 \
+                   and extract(epoch from registered_at) * 1000000 <= $1::bigint \
+                 order by split_part(version, '.', 1)::numeric desc, \
+                          split_part(version, '.', 2)::numeric desc limit 1) \
          from rule_registrations \
-         where $1::text is null or (source, path, id) < ($1, $2, $3) \
-         order by source desc, path desc, id desc, \
-                  split_part(version, '.', 1)::numeric desc, split_part(version, '.', 2)::numeric desc \
-         limit $4",
+         where $1::bigint is null or extract(epoch from registered_at) * 1000000 <= $1",
     )
-    .bind(before.map(|(source, _, _)| source))
-    .bind(before.map(|(_, path, _)| path))
-    .bind(before.map(|(_, _, id)| id))
+    .bind(before.map(|cursor| cursor.scan.through))
+    .bind(before.map(|cursor| &cursor.source))
+    .bind(before.map(|cursor| &cursor.path))
+    .bind(before.map(|cursor| &cursor.id))
+    .bind(before.map(|cursor| &cursor.version))
+    .fetch_one(&mut *transaction)
+    .await?;
+    if before.is_some_and(|cursor| {
+        through != Some(cursor.scan.through)
+            || registrations != cursor.scan.registrations
+            || anchor.is_none()
+    }) {
+        return Ok(None);
+    }
+    let Some(through) = through else {
+        return Ok(Some(Vec::new()));
+    };
+    let scan = RuleScan {
+        through,
+        registrations,
+    };
+
+    let summaries = sqlx::query_as(
+        r#"with greatest as (
+               select distinct on (source, path, id)
+                      source, path, id, version, kind, name, description,
+                      lower(coalesce(name, id) collate pg_catalog."pg_c_utf8") as sort_name
+               from rule_registrations
+               where extract(epoch from registered_at) * 1000000 <= $1::bigint
+               order by source, path, id,
+                        split_part(version, '.', 1)::numeric desc,
+                        split_part(version, '.', 2)::numeric desc
+           )
+           select source, path, id, version, kind, name, description
+           from greatest
+           where $2::text is null
+              or (sort_name, source collate pg_catalog."C", path collate pg_catalog."C",
+                  id collate pg_catalog."C")
+               > (lower($2 collate pg_catalog."pg_c_utf8"), $3, $4, $5)
+           order by sort_name, source collate pg_catalog."C", path collate pg_catalog."C",
+                    id collate pg_catalog."C"
+           limit $6"#,
+    )
+    .bind(through)
+    .bind(anchor)
+    .bind(before.map(|cursor| &cursor.source))
+    .bind(before.map(|cursor| &cursor.path))
+    .bind(before.map(|cursor| &cursor.id))
     .bind(limit)
-    .fetch_all(pool)
-    .await
+    .fetch_all(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+    Ok(Some(
+        summaries
+            .into_iter()
+            .map(|summary| ListedRule { summary, scan })
+            .collect(),
+    ))
 }
 
 pub(crate) async fn registered_rule_versions(

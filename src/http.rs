@@ -1,4 +1,4 @@
-use crate::attestation::{Envelope, valid_rule_identity};
+use crate::attestation::{Envelope, valid_rule_identity, valid_version};
 use crate::database;
 use crate::registration::{JsonObject, Outcome, RegistrationRequest};
 use axum::body::Bytes;
@@ -184,22 +184,27 @@ impl RuleIdentity {
 async fn rules(
     State(pool): State<PgPool>,
     Query(page): Query<RulePage>,
-) -> Result<Json<Vec<database::RuleSummary>>, StatusCode> {
+) -> Result<Json<Vec<database::ListedRule>>, StatusCode> {
     let limit = page_limit(page.limit)?;
     let before = page
         .before
         .as_deref()
-        .map(serde_json::from_str::<JsonObject<RuleIdentity>>)
+        .map(serde_json::from_str::<JsonObject<database::RuleCursor>>)
         .transpose()
         .map_err(|_| StatusCode::BAD_REQUEST)?;
-    let before = before
-        .as_ref()
-        .map(|JsonObject(rule)| rule.parts())
-        .transpose()?;
+    let before = before.as_ref().map(|JsonObject(cursor)| cursor);
+    if before.is_some_and(|cursor| {
+        !valid_rule_identity(&cursor.source, &cursor.path, &cursor.id)
+            || !valid_version(&cursor.version)
+            || cursor.scan.registrations < 1
+    }) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
     database::registered_rules(&pool, before, limit)
         .await
+        .map_err(|error| read_failure(&error))?
         .map(Json)
-        .map_err(|error| read_failure(&error))
+        .ok_or(StatusCode::BAD_REQUEST)
 }
 
 async fn rule_detail(

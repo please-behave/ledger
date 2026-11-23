@@ -49,6 +49,31 @@ async fn read_registry(address: SocketAddr, path: &str) -> (u16, String) {
         .expect("request finishes")
 }
 
+fn rule_cursor(summary: &Value) -> Value {
+    json!({
+        "source": summary["source"],
+        "path": summary["path"],
+        "id": summary["id"],
+        "version": summary["version"],
+        "scan": summary["scan"],
+    })
+}
+
+fn rules_after(cursor: &Value, limit: usize) -> String {
+    let encoded: String = cursor
+        .to_string()
+        .bytes()
+        .map(|byte| format!("%{byte:02X}"))
+        .collect();
+    format!("/v0/rules?limit={limit}&before={encoded}")
+}
+
+async fn rules_page(address: SocketAddr, path: &str) -> Vec<Value> {
+    let (status, body) = read_registry(address, path).await;
+    assert_eq!(status, 200, "{body}");
+    serde_json::from_str(&body).unwrap()
+}
+
 // REQ-0029, REQ-0030
 #[tokio::test(flavor = "multi_thread")]
 async fn registry_pages_summaries_and_reads_all_versions() {
@@ -90,34 +115,29 @@ async fn registry_pages_summaries_and_reads_all_versions() {
     .await;
     assert_eq!(second_receipt[0]["outcome"], "created");
 
-    let (status, body) = read_registry(address, "/v0/rules?limit=1").await;
-    assert_eq!(status, 200);
-    let first_page: Value = serde_json::from_str(&body).unwrap();
+    let first_page = rules_page(address, "/v0/rules?limit=1").await;
+    let scan = &first_page[0]["scan"];
+    assert_eq!(scan["registrations"], 7);
     assert_eq!(
         first_page,
-        json!([{
+        vec![json!({
             "source": source, "path": path, "id": id, "version": huge_version,
             "kind": "review", "name": review["name"], "description": review["description"],
-        }])
+            "scan": scan,
+        })]
     );
 
-    let (status, body) = read_registry(
-        address,
-        concat!(
-            "/v0/rules?limit=200&before=%7B%22source%22%3A%22github.com%2Fteam%2Frules%22",
-            "%2C%22path%22%3A%22checks%2Fquality+%26+style%2B%22%2C%22id%22%3A%22summary%22%7D"
-        ),
-    )
-    .await;
-    assert_eq!(status, 200);
-    let next_page: Value = serde_json::from_str(&body).unwrap();
+    let next_page = rules_page(address, &rules_after(&rule_cursor(&first_page[0]), 200)).await;
     assert_eq!(
         next_page,
-        json!([
-            {"source": source, "path": path, "id": "other", "version": "1.0", "kind": "check"},
-            {"source": source, "path": "checks/other", "id": id, "version": "1.0", "kind": "check"},
-            {"source": "a.test/team/rules", "path": path, "id": id, "version": "1.0", "kind": "check"},
-        ])
+        vec![
+            json!({"source": source, "path": path, "id": "other", "version": "1.0",
+                "kind": "check", "scan": scan}),
+            json!({"source": "a.test/team/rules", "path": path, "id": id, "version": "1.0",
+                "kind": "check", "scan": scan}),
+            json!({"source": source, "path": "checks/other", "id": id, "version": "1.0",
+                "kind": "check", "scan": scan}),
+        ]
     );
 
     let (status, body) = read_registry(
@@ -153,6 +173,114 @@ async fn registry_pages_summaries_and_reads_all_versions() {
     assert_eq!(versions[3], expected_review);
 }
 
+// REQ-0029
+#[tokio::test(flavor = "multi_thread")]
+async fn registry_orders_names_across_pages_even_after_new_registrations() {
+    let database = postgres().await;
+    let pool = migrated_pool(&database).await;
+    let address = start_service(pool.clone()).await;
+    let expected = [
+        ("b.test", "checks", "empty", Some("")),
+        ("a.test", "checks", "second", Some("ALPHA")),
+        ("b.test", "a", "third", Some("alpha")),
+        ("b.test", "checks", "fifth", Some("ALPHA")),
+        ("b.test", "checks", "fourth", Some("Alpha")),
+        ("b.test", "checks", "Banana", None),
+        ("b.test", "checks", "last-ascii", Some("zeta")),
+        ("b.test", "checks", "accent-first", Some("éclair")),
+        ("b.test", "checks", "accent-second", Some("Éclair")),
+        ("b.test", "checks", "greek", Some("Ωmega")),
+    ];
+    let rules: Vec<_> = expected
+        .iter()
+        .rev()
+        .map(|(source, path, id, name)| {
+            let mut rule = json!({"source": source, "path": path, "id": id,
+                "version": "1.0", "kind": "check"});
+            if let Some(name) = name {
+                rule["name"] = json!(name);
+            }
+            rule
+        })
+        .collect();
+    outcomes(
+        address,
+        json!({"sender": "ci", "commit": COMMIT, "rules": rules}).to_string(),
+    )
+    .await;
+
+    let mut summaries = rules_page(address, "/v0/rules?limit=2").await;
+    let first_cursor = rule_cursor(summaries.last().unwrap());
+    outcomes(
+        address,
+        json!({"sender": "ci", "commit": COMMIT, "rules": [
+            {"source": "a.test", "path": "checks", "id": "second",
+                "version": "2.0", "kind": "check", "name": "鼐"},
+            {"source": "b.test", "path": "checks", "id": "new",
+                "version": "1.0", "kind": "check", "name": "Z"},
+        ]})
+        .to_string(),
+    )
+    .await;
+
+    loop {
+        let cursor = rule_cursor(summaries.last().unwrap());
+        let page = rules_page(address, &rules_after(&cursor, 2)).await;
+        if page.is_empty() {
+            break;
+        }
+        assert_eq!(page.len(), 2);
+        summaries.extend(page);
+        assert!(summaries.len() <= expected.len());
+    }
+    assert_eq!(summaries.len(), expected.len());
+    for (summary, (source, path, id, name)) in summaries.iter().zip(expected) {
+        assert_eq!(summary["source"], source);
+        assert_eq!(summary["path"], path);
+        assert_eq!(summary["id"], id);
+        assert_eq!(summary["version"], "1.0");
+        assert_eq!(summary.get("name").and_then(Value::as_str), name);
+        assert_eq!(summary["scan"], first_cursor["scan"]);
+    }
+
+    let fresh = rules_page(address, "/v0/rules").await;
+    assert_eq!(fresh.len(), expected.len() + 1);
+    assert_eq!(fresh.last().unwrap()["id"], "second");
+    assert_eq!(fresh.last().unwrap()["version"], "2.0");
+
+    let mut old_version = rule_cursor(fresh.last().unwrap());
+    old_version["version"] = json!("1.0");
+    for cursor in [
+        old_version,
+        json!({"source": "a.test", "path": "checks", "id": "second"}),
+        json!({"scan": first_cursor["scan"], "source": "a.test", "path": "checks",
+            "id": "second", "version": "01.0"}),
+    ] {
+        assert_eq!(
+            read_registry(address, &rules_after(&cursor, 2)).await.0,
+            400
+        );
+    }
+
+    // A transaction can become visible after the first page with an earlier
+    // registration timestamp. Reject this cursor rather than changing its scan.
+    sqlx::query(
+        "insert into rule_registrations
+         (source, path, id, version, kind, digest, sender, commit_sha, registered_at)
+         values ('b.test', 'checks', 'late', '1.0', 'check', 'digest', 'ci', $1, '2020-01-01T00:00:00Z')",
+    )
+    .bind(COMMIT)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        read_registry(address, &rules_after(&first_cursor, 2))
+            .await
+            .0,
+        400
+    );
+}
+
 // REQ-0029, REQ-0030
 #[tokio::test(flavor = "multi_thread")]
 async fn registry_distinguishes_empty_reads_from_bad_requests() {
@@ -177,6 +305,7 @@ async fn registry_distinguishes_empty_reads_from_bad_requests() {
         "/v0/rules?limit=bad",
         "/v0/rules?limit=1&limit=2",
         "/v0/rules?before=bad",
+        "/v0/rules?before=%7B%7D&before=%7B%7D",
         "/v0/rules?before=%7B%7D",
         "/v0/rules?before=%5B%22repo%22%2C%22rules%22%2C%22one%22%5D",
         "/v0/rules?extra=1",
