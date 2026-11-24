@@ -24,7 +24,7 @@ scopes_file = ".please/commit-scopes.txt"
 [[imports]]
 git = "https://github.com/christianpflugradt/repository-catalog.git"
 path = "rulesets/security"
-ref = "2b098709773d0de78f6d03b597c03b15eff6e2d5"
+ref = "0b01148cebac72b4563f8ebebce0c39b0a1431ea"
 
 [imports.rule_parameters.dependency-audit-workflow]
 dependencies = "audited"
@@ -40,12 +40,12 @@ target = "LICENSE"
 [[imports]]
 git = "https://github.com/christianpflugradt/repository-catalog.git"
 path = "rulesets/releasable-open-source-software"
-ref = "2b098709773d0de78f6d03b597c03b15eff6e2d5"
+ref = "0b01148cebac72b4563f8ebebce0c39b0a1431ea"
 
 [[imports]]
 git = "https://github.com/christianpflugradt/repository-catalog.git"
 path = "rulesets/why"
-ref = "2b098709773d0de78f6d03b597c03b15eff6e2d5"
+ref = "0b01148cebac72b4563f8ebebce0c39b0a1431ea"
 
 [[adapter_imports]]
 id = "gemini-flash-lite"
