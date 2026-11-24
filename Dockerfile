@@ -1,4 +1,4 @@
-FROM rust:1.100.0-slim-trixie@sha256:86993c97389ebb5487eb09e88168e2a00b0de29aa08dff9ae896049b9be96ed9 AS build
+FROM rust:1.100.0-slim-trixie@sha256:51fdc80ccc3fb83bf14481f2cd8d0d11703eeb9f416ab47476c32a793a822307 AS build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY migrations ./migrations
