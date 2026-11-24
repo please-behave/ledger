@@ -166,6 +166,7 @@ pub(crate) struct RuleSummary {
     id: String,
     version: String,
     kind: String,
+    owner: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -259,7 +260,7 @@ pub(crate) async fn registered_rules(
     let summaries = sqlx::query_as(
         r#"with greatest as (
                select distinct on (source, path, id)
-                      source, path, id, version, kind, name, description,
+                      source, path, id, version, kind, name, description, sender as owner,
                       lower(coalesce(name, id) collate pg_catalog."pg_c_utf8") as sort_name
                from rule_registrations
                where extract(epoch from registered_at) * 1000000 <= $1::bigint
@@ -267,7 +268,7 @@ pub(crate) async fn registered_rules(
                         split_part(version, '.', 1)::numeric desc,
                         split_part(version, '.', 2)::numeric desc
            )
-           select source, path, id, version, kind, name, description
+           select source, path, id, version, kind, name, description, owner
            from greatest
            where $2::text is null
               or (sort_name, source collate pg_catalog."C", path collate pg_catalog."C",
@@ -302,7 +303,7 @@ pub(crate) async fn registered_rule_versions(
 ) -> Result<Vec<RuleVersion>, sqlx::Error> {
     sqlx::query_as(
         "select source, path, id, version, kind, name, description, blocking, prompt, knowledge, \
-                digest, commit_sha as commit, \
+                sender as owner, digest, commit_sha as commit, \
                 to_char(registered_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') as registered_at \
          from rule_registrations where source = $1 and path = $2 and id = $3 \
          order by split_part(version, '.', 1)::numeric, split_part(version, '.', 2)::numeric",

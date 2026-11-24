@@ -3,16 +3,18 @@ name: Paged Registered Rules
 description: >-
   The ledger must provide a paged read of registered rules that returns each
   source, path and ID once, with the numerically greatest registered version
-  and that version's kind, name and description. It must sort by that version's
-  name, falling back to the local ID when absent. It must compare Unicode
-  lowercase names by code point, then break ties by source, path and ID in
-  ascending code point order. A continuation must be derivable from the last
-  summary and must never repeat an identity, even when a later registration
-  renames a rule. The read must preserve stored texts and leave registrations
-  unchanged.
+  and that version's kind, name, description and owner. The owner is the
+  sender stored for the first registration of that version, as received.
+  The ledger must sort by that version's name, falling back to the local ID
+  when absent. It must compare Unicode lowercase names by code point, then
+  break ties by source, path and ID in ascending code point order. A
+  continuation must be derivable from the last summary and must never repeat
+  an identity, even when a later registration renames a rule. The read must
+  preserve stored texts and leave registrations unchanged.
 rationale: >-
   The cockpit can browse the rule registry without reading every version.
 decisions:
+  - DEC-0004
   - why:DEC-0010
   - why:DEC-0011
   - why:DEC-0012

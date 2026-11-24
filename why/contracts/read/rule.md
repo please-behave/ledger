@@ -15,10 +15,17 @@ fields follow the [registration contract](../ingest/rule-registration.md).
 | `404` | No versions are registered for this identity. |
 
 Each entry contains the registered rule fields, its canonical digest, the
-original registering commit and the time the ledger first stored it in UTC.
+original registering commit, the time the ledger first stored it in UTC and
+the `owner`. The owner is the authenticated sender stored from the first
+registration of that version, as received. It is a repository identity for
+GitHub OIDC or a key label for API keys. A repeat registration with the same
+digest preserves the owner.
 Reviews carry their effective `blocking` value and the registered prompt.
 Optional fields are omitted when absent from the registration. The ledger
 returns all texts and the knowledge document as stored. Consumers must treat
 them as untrusted data and escape them for the display context.
 
 The read changes nothing.
+
+The `owner` field is an additive change to the `v0` response. Consumers that
+ignore additional response fields can continue reading the same version.

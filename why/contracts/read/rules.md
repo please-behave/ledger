@@ -5,7 +5,8 @@ Producer: the ledger. Consumer: the cockpit. The compatibility version is in
 
 `GET /v0/rules` returns `200` and a JSON array with one summary per rule
 identity. Each summary describes the greatest registered version, comparing
-the major and then minor components numerically. The display name is that
+the major and then minor components numerically. Its `owner` is that version's
+[first registering sender](rule.md), as stored. The display name is that
 version's stored name, or its local ID if the name is absent. The ledger
 sorts by display name in ascending Unicode code point order after Unicode
 simple lowercase mapping. It breaks ties by source, path and ID in ascending
@@ -34,3 +35,6 @@ parameters. A page shorter than the limit ends the scan.
 The read changes nothing. The ledger returns texts as stored. Consumers must
 treat them as untrusted data and escape them for the display context. For all
 versions of one identity, see [Registered rule versions](rule.md).
+
+The `owner` field is an additive change to the `v0` response. Consumers that
+ignore additional response fields can continue reading the same version.

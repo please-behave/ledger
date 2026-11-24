@@ -83,6 +83,8 @@ async fn registry_pages_summaries_and_reads_all_versions() {
     let source = "github.com/team/rules";
     let path = "checks/quality & style+";
     let id = "summary";
+    let older_owner = "github.com/team/Rule-Registry";
+    let greatest_owner = "  Release Key  ";
     let huge_version = "99999999999999999999999999999999999999999999999999999999999999.0";
     let review = json!({
         "source": source, "path": path, "id": id, "version": huge_version,
@@ -98,14 +100,9 @@ async fn registry_pages_summaries_and_reads_all_versions() {
             })
         })
         .collect();
-    let first_receipt = outcomes(
+    let greatest_receipt = outcomes(
         address,
-        json!({"sender": "ci", "commit": COMMIT, "rules": older}).to_string(),
-    )
-    .await;
-    let second_receipt = outcomes(
-        address,
-        json!({"sender": "ci", "commit": RETRY_COMMIT, "rules": [
+        json!({"sender": greatest_owner, "commit": COMMIT, "rules": [
             review,
             {"source": source, "path": path, "id": "other", "version": "1.0", "kind": "check"},
             {"source": source, "path": "checks/other", "id": id, "version": "1.0", "kind": "check"},
@@ -113,7 +110,19 @@ async fn registry_pages_summaries_and_reads_all_versions() {
         ]}).to_string(),
     )
     .await;
-    assert_eq!(second_receipt[0]["outcome"], "created");
+    assert_eq!(greatest_receipt[0]["outcome"], "created");
+    let older_receipt = outcomes(
+        address,
+        json!({"sender": older_owner, "commit": COMMIT, "rules": older}).to_string(),
+    )
+    .await;
+    let retry = outcomes(
+        address,
+        json!({"sender": "another-ci", "commit": RETRY_COMMIT, "rules": [review]}).to_string(),
+    )
+    .await;
+    assert_eq!(retry[0]["outcome"], "unchanged");
+    assert_eq!(retry[0]["digest"], greatest_receipt[0]["digest"]);
 
     let first_page = rules_page(address, "/v0/rules?limit=1").await;
     let scan = &first_page[0]["scan"];
@@ -123,7 +132,7 @@ async fn registry_pages_summaries_and_reads_all_versions() {
         vec![json!({
             "source": source, "path": path, "id": id, "version": huge_version,
             "kind": "review", "name": review["name"], "description": review["description"],
-            "scan": scan,
+            "owner": greatest_owner, "scan": scan,
         })]
     );
 
@@ -132,11 +141,11 @@ async fn registry_pages_summaries_and_reads_all_versions() {
         next_page,
         vec![
             json!({"source": source, "path": path, "id": "other", "version": "1.0",
-                "kind": "check", "scan": scan}),
+                "kind": "check", "owner": greatest_owner, "scan": scan}),
             json!({"source": "a.test/team/rules", "path": path, "id": id, "version": "1.0",
-                "kind": "check", "scan": scan}),
+                "kind": "check", "owner": greatest_owner, "scan": scan}),
             json!({"source": source, "path": "checks/other", "id": id, "version": "1.0",
-                "kind": "check", "scan": scan}),
+                "kind": "check", "owner": greatest_owner, "scan": scan}),
         ]
     );
 
@@ -149,15 +158,17 @@ async fn registry_pages_summaries_and_reads_all_versions() {
     assert_eq!(versions.len(), 4);
     for (version, index) in versions.iter().zip([2, 0, 1]) {
         let mut expected = older[index].clone();
-        expected["digest"] = first_receipt[index]["digest"].clone();
+        expected["owner"] = json!(older_owner);
+        expected["digest"] = older_receipt[index]["digest"].clone();
         expected["commit"] = json!(COMMIT);
         expected["registered_at"] = version["registered_at"].clone();
         assert_eq!(*version, expected);
         assert!(version["registered_at"].as_str().unwrap().ends_with('Z'));
     }
     let mut expected_review = review;
-    expected_review["digest"] = second_receipt[0]["digest"].clone();
-    expected_review["commit"] = json!(RETRY_COMMIT);
+    expected_review["owner"] = json!(greatest_owner);
+    expected_review["digest"] = greatest_receipt[0]["digest"].clone();
+    expected_review["commit"] = json!(COMMIT);
     expected_review["registered_at"] =
         json!(sqlx::query_scalar::<_, String>(
         "select to_char(registered_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') \
@@ -171,6 +182,16 @@ async fn registry_pages_summaries_and_reads_all_versions() {
     .await
     .unwrap());
     assert_eq!(versions[3], expected_review);
+
+    let (status, body) = read_registry(
+        address,
+        "/v0/rules/detail?source=github.com%2Fteam%2Frules&path=checks%2Fother&id=summary",
+    )
+    .await;
+    assert_eq!(status, 200);
+    let only_version: Vec<Value> = serde_json::from_str(&body).unwrap();
+    assert_eq!(only_version.len(), 1);
+    assert_eq!(only_version[0]["owner"], greatest_owner);
 }
 
 // REQ-0029
