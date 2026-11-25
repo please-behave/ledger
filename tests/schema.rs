@@ -92,6 +92,7 @@ async fn migrate_creates_the_schema_and_is_idempotent() {
     assert!(exists(&pool, "attestations").await);
     assert!(exists(&pool, "attestation_results").await);
     assert!(exists(&pool, "rule_registrations").await);
+    assert!(exists(&pool, "rule_set_registrations").await);
     for index in [
         "attestations_latest_idx",
         "attestations_repository_commit_idx",
@@ -218,6 +219,106 @@ async fn rule_registry_migration_preserves_attestations_and_keys_versions() {
     assert!(insert_version("1.1").await.expect("a second version"));
     let duplicate = insert_version("1.0").await.expect_err("the key is unique");
     assert!(matches!(duplicate, sqlx::Error::Database(error) if error.is_unique_violation()));
+}
+
+#[tokio::test]
+async fn rule_set_registry_migration_preserves_rules_and_stores_set_versions() {
+    const MIGRATIONS: Migrator = sqlx::migrate!();
+    const PRE_SET_REGISTRY_SCHEMA: i64 = 20261122000002;
+    const SOURCE: &str = "github.com/owner/name";
+    const DIGEST: &str =
+        "v1:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
+    const DESCRIPTION: &str = "First line\r\nSecond line";
+    const KNOWLEDGE: &str = r#"{ "purpose": "First line\r\nSecond line" }"#;
+
+    let database = postgres().await;
+    let pool = ledger::database::connect(&database.url)
+        .await
+        .expect("connect");
+    MIGRATIONS
+        .run_to(PRE_SET_REGISTRY_SCHEMA, &pool)
+        .await
+        .expect("apply the preceding schema");
+    let insert_rule = |version: &'static str| {
+        sqlx::query(
+            "insert into rule_registrations \
+             (source, path, id, version, kind, digest, sender, commit_sha) \
+             values ($1, '.', 'format', $2, 'check', $3, 'ci', $4)",
+        )
+        .bind(SOURCE)
+        .bind(version)
+        .bind(DIGEST)
+        .bind(COMMIT)
+        .execute(&pool)
+    };
+    insert_rule("1.0").await.expect("an existing rule");
+    assert!(!exists(&pool, "rule_set_registrations").await);
+
+    ledger::database::migrate(&pool)
+        .await
+        .expect("add the Rule Set registry");
+    insert_rule("1.1").await.expect("a legacy rule insert");
+    let rule_versions: Vec<String> =
+        sqlx::query_scalar("select version from rule_registrations order by version")
+            .fetch_all(&pool)
+            .await
+            .expect("read both rule versions");
+    assert_eq!(rule_versions, ["1.0", "1.1"]);
+
+    let members = serde_json::json!([{
+        "source": SOURCE,
+        "path": ".",
+        "id": "format",
+        "version": "1.0",
+        "digest": DIGEST,
+        "enabled": false
+    }]);
+    let insert_set = |version: &'static str| {
+        sqlx::query(
+            "insert into rule_set_registrations \
+             (source, path, id, version, name, description, knowledge, members, digest, sender, commit_sha) \
+             values ($1, '.', 'conventions', $2, 'Conventions', $3, $4::text::json, $5::text::json, $6, 'ci', $7)",
+        )
+        .bind(SOURCE)
+        .bind(version)
+        .bind(DESCRIPTION)
+        .bind(KNOWLEDGE)
+        .bind(members.to_string())
+        .bind(DIGEST)
+        .bind(COMMIT)
+        .execute(&pool)
+    };
+    insert_set("1.0").await.expect("the first set version");
+    insert_set("1.1").await.expect("a second set version");
+    let duplicate = insert_set("1.0").await.expect_err("the set key is unique");
+    assert!(matches!(duplicate, sqlx::Error::Database(error) if error.is_unique_violation()));
+
+    let stored: serde_json::Value = sqlx::query_scalar(
+        "select json_build_object( \
+             'name', name, 'description', description, 'knowledge', knowledge::text, \
+             'members', members, 'digest', digest, 'sender', sender, 'commit', commit_sha, \
+             'timestamp_set', registered_at is not null) \
+         from rule_set_registrations where source = $1 and path = '.' \
+           and id = 'conventions' and version = '1.0'",
+    )
+    .bind(SOURCE)
+    .fetch_one(&pool)
+    .await
+    .expect("read the first set version");
+    assert_eq!(
+        stored,
+        serde_json::json!({
+            "name": "Conventions",
+            "description": DESCRIPTION,
+            "knowledge": KNOWLEDGE,
+            "members": members,
+            "digest": DIGEST,
+            "sender": "ci",
+            "commit": COMMIT,
+            "timestamp_set": true
+        })
+    );
 }
 
 #[tokio::test]
