@@ -1,0 +1,12 @@
+id: REQ-0035
+name: Verify Every Rule Set Member Before Registration
+description: >-
+  The ledger must reject a Rule Set version if any member rule version is
+  unregistered or has a different registered digest. It must report every
+  failing member and its reason in the outcome for that set and store nothing
+  for the rejected set.
+rationale: >-
+  A Rule Set version can only refer to registered member versions with the
+  same evidence of their contents.
+decisions:
+  - why:DEC-0017

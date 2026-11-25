@@ -150,7 +150,7 @@ impl Rule {
         let knowledge = self
             .knowledge
             .as_deref()
-            .map(|raw| serde_json::from_str::<KnowledgeValue>(raw.get()))
+            .map(|raw| serde_json::from_str::<RegistrationJson>(raw.get()))
             .transpose()?;
         let knowledge = knowledge
             .as_ref()
@@ -170,46 +170,46 @@ impl Rule {
 }
 
 // Parse objects before insertion into a JSON map would discard duplicate keys.
-struct KnowledgeValue(Value);
+pub(crate) struct RegistrationJson(pub Value);
 
-impl<'de> Deserialize<'de> for KnowledgeValue {
+impl<'de> Deserialize<'de> for RegistrationJson {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_any(KnowledgeVisitor)
+        deserializer.deserialize_any(RegistrationJsonVisitor)
     }
 }
 
-struct KnowledgeVisitor;
+struct RegistrationJsonVisitor;
 
-impl<'de> Visitor<'de> for KnowledgeVisitor {
-    type Value = KnowledgeValue;
+impl<'de> Visitor<'de> for RegistrationJsonVisitor {
+    type Value = RegistrationJson;
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("a string, boolean, array or object")
     }
 
     fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-        Ok(KnowledgeValue(Value::String(value.to_owned())))
+        Ok(RegistrationJson(Value::String(value.to_owned())))
     }
 
     fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
-        Ok(KnowledgeValue(Value::Bool(value)))
+        Ok(RegistrationJson(Value::Bool(value)))
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, mut sequence: A) -> Result<Self::Value, A::Error> {
         let mut items = Vec::new();
-        while let Some(KnowledgeValue(value)) = sequence.next_element()? {
+        while let Some(RegistrationJson(value)) = sequence.next_element()? {
             items.push(value);
         }
-        Ok(KnowledgeValue(Value::Array(items)))
+        Ok(RegistrationJson(Value::Array(items)))
     }
 
     fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
         let mut members = Map::new();
-        while let Some((key, KnowledgeValue(value))) = map.next_entry()? {
+        while let Some((key, RegistrationJson(value))) = map.next_entry()? {
             if members.insert(key, value).is_some() {
                 return Err(serde::de::Error::custom("duplicate knowledge member"));
             }
         }
-        Ok(KnowledgeValue(Value::Object(members)))
+        Ok(RegistrationJson(Value::Object(members)))
     }
 }

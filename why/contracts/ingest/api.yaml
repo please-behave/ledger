@@ -22,3 +22,11 @@ contracts:
       - REQ-0023
       - REQ-0026
       - REQ-0027
+  - id: CON-0009
+    name: Rule Set Registration
+    document: rule-set-registration.md
+    schema: rule-set-registration.schema.json
+    requirements:
+      - REQ-0033
+      - REQ-0034
+      - REQ-0035

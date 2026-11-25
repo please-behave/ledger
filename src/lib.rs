@@ -4,3 +4,4 @@ pub mod database;
 pub mod http;
 mod registration;
 pub mod rule_digest;
+mod rule_set_registration;

@@ -34,7 +34,11 @@ pub enum RuleKind<'a> {
 pub fn rule_digest(input: &RuleDigestInput<'_>) -> Result<String> {
     let canonical = canonicalize(serde_json::to_value(input)?)?;
     let bytes = serde_json::to_vec(&canonical)?;
-    Ok(format!("v1:sha256:{:x}", Sha256::digest(bytes)))
+    Ok(sha256_digest(&bytes))
+}
+
+pub(crate) fn sha256_digest(bytes: &[u8]) -> String {
+    format!("v1:sha256:{:x}", Sha256::digest(bytes))
 }
 
 fn canonicalize(value: Value) -> Result<Value> {

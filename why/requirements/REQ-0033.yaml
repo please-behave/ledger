@@ -1,0 +1,11 @@
+id: REQ-0033
+name: Validate Bounded Rule Set Registration Batches
+description: >-
+  The ledger must validate the complete Rule Set registration request against
+  the ingest contract before storing any registration.
+rationale: >-
+  A malformed or oversized request must not cause partial writes or unbounded
+  verification work.
+decisions:
+  - why:DEC-0016
+  - why:DEC-0017

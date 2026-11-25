@@ -1,0 +1,14 @@
+id: REQ-0034
+name: Append-only Rule Set Registrations
+description: >-
+  For each Rule Set with valid members, the ledger must keep the first
+  registration for a source, path, ID and version, together with its members,
+  member-list digest, untrusted metadata, and provenance. It must report
+  created for a new key, unchanged for an equal digest and conflict for a
+  different digest, returning the submitted member-list digest in each case.
+rationale: >-
+  A registered Rule Set version is a stable record of the membership the owner
+  published.
+decisions:
+  - why:DEC-0016
+  - why:DEC-0017

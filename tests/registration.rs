@@ -10,6 +10,7 @@ use support::{get, migrated_pool, post, postgres};
 use tokio::net::TcpListener;
 
 const ROUTE: &str = "/v0/rule-registrations";
+const RULE_SET_ROUTE: &str = "/v0/rule-set-registrations";
 const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 const RETRY_COMMIT: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
 
@@ -31,13 +32,21 @@ async fn start_service(pool: PgPool) -> SocketAddr {
 }
 
 async fn submit(address: SocketAddr, body: String) -> (u16, String) {
-    tokio::task::spawn_blocking(move || post(address, ROUTE, &body))
+    submit_to(address, ROUTE, body).await
+}
+
+async fn submit_to(address: SocketAddr, route: &'static str, body: String) -> (u16, String) {
+    tokio::task::spawn_blocking(move || post(address, route, &body))
         .await
         .expect("request finishes")
 }
 
 async fn outcomes(address: SocketAddr, body: String) -> Value {
-    let (status, receipt) = submit(address, body).await;
+    registration_outcomes(address, ROUTE, body).await
+}
+
+async fn registration_outcomes(address: SocketAddr, route: &'static str, body: String) -> Value {
+    let (status, receipt) = submit_to(address, route, body).await;
     assert_eq!(status, 200, "{receipt}");
     serde_json::from_str::<Value>(&receipt).expect("JSON receipt")["outcomes"].clone()
 }
@@ -549,4 +558,187 @@ async fn invalid_batches_leave_the_registry_empty() {
         .await
         .expect("count registrations");
     assert_eq!(rows, 0);
+}
+
+fn set_member() -> Value {
+    let vector = &vectors()[0];
+    let mut rule: Value = serde_json::from_str(vector.input.get()).unwrap();
+    rule.as_object_mut().unwrap().remove("kind");
+    rule["digest"] = json!(vector.digest);
+    rule["enabled"] = json!(false);
+    rule
+}
+
+fn rule_set(members: Value) -> Value {
+    json!({
+        "source": "github.com/example/sets",
+        "path": ".",
+        "id": "baseline",
+        "version": "1.0",
+        "members": members
+    })
+}
+
+fn set_batch(sets: Vec<Value>) -> Value {
+    json!({"sender": "ci", "commit": COMMIT, "sets": sets})
+}
+
+async fn set_outcomes(address: SocketAddr, batch: Value) -> Value {
+    registration_outcomes(address, RULE_SET_ROUTE, batch.to_string()).await
+}
+
+async fn stored_set(pool: &PgPool) -> Value {
+    sqlx::query_scalar(
+        "select json_build_object( \
+            'name', name, 'description', description, 'knowledge', knowledge::text, \
+            'members', members, 'digest', digest, 'sender', sender, \
+            'commit', commit_sha, 'registered_at', registered_at) \
+         from rule_set_registrations where id = 'baseline' and version = '1.0'",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("the original set version")
+}
+
+// REQ-0034, REQ-0035
+#[tokio::test(flavor = "multi_thread")]
+async fn set_registrations_preserve_the_original_and_store_new_versions() {
+    const SET_DIGEST: &str =
+        "v1:sha256:0410200f292e7a2b66890e50c7cf4092904b378cae53fcd512d79e453bbd7ab7";
+    let database = postgres().await;
+    let pool = migrated_pool(&database).await;
+    let address = start_service(pool.clone()).await;
+    assert_eq!(
+        outcomes(address, batch("ci", COMMIT, vectors()[0].input.get())).await[0]["outcome"],
+        "created"
+    );
+
+    let members = json!([set_member()]);
+    let mut set = rule_set(members.clone());
+    set["name"] = json!("Original 📝");
+    set["description"] = json!("  <data>.\r\nSecond line.");
+    set["knowledge"] = json!({
+        "purpose": "Text & markup.\r\nSecond line.",
+        "audience": "Repository owners",
+        "commonality": "Formatting",
+        "rules": [{"rule": "format", "role": "Check format."}],
+        "admission": ["Formatting rules."],
+        "execution_points": "Check"
+    });
+    let created = set_outcomes(address, set_batch(vec![set.clone()])).await;
+    assert_eq!(
+        created,
+        json!([{"outcome": "created", "digest": SET_DIGEST}])
+    );
+    let original = stored_set(&pool).await;
+    assert_eq!(original["name"], set["name"]);
+    assert_eq!(original["description"], set["description"]);
+    assert_eq!(original["knowledge"], set["knowledge"].to_string());
+    assert_eq!(original["members"], members);
+    assert_eq!(original["sender"], "ci");
+    assert_eq!(original["commit"], COMMIT);
+    assert_eq!(original["digest"], SET_DIGEST);
+    assert!(original["registered_at"].is_string());
+
+    let mut retry = rule_set(members);
+    retry["name"] = json!("Different display name");
+    let mut changed = retry.clone();
+    changed["members"][0]["enabled"] = json!(true);
+    let mut next = changed.clone();
+    next["version"] = json!("1.1");
+    let mut request = set_batch(vec![retry, changed, next]);
+    request["commit"] = json!(RETRY_COMMIT);
+    request["sender"] = json!("another-ci");
+    let receipts = set_outcomes(address, request).await;
+    assert_eq!(
+        receipts[0],
+        json!({"outcome":"unchanged","digest":SET_DIGEST})
+    );
+    assert_eq!(receipts[1]["outcome"], "conflict");
+    assert_eq!(receipts[2]["outcome"], "created");
+    assert_eq!(receipts[1]["digest"], receipts[2]["digest"]);
+    assert_ne!(receipts[1]["digest"], SET_DIGEST);
+    assert_eq!(stored_set(&pool).await, original);
+
+    let new_digest: String =
+        sqlx::query_scalar("select digest from rule_set_registrations where version = '1.1'")
+            .fetch_one(&pool)
+            .await
+            .expect("the second version exists");
+    assert_eq!(receipts[2]["digest"], new_digest);
+}
+
+// REQ-0035
+#[tokio::test(flavor = "multi_thread")]
+async fn reports_all_invalid_members_without_inserting_the_failed_sets() {
+    let database = postgres().await;
+    let pool = migrated_pool(&database).await;
+    let address = start_service(pool.clone()).await;
+    outcomes(address, batch("ci", COMMIT, vectors()[0].input.get())).await;
+
+    let matching = set_member();
+    let mut missing = matching.clone();
+    missing["version"] = json!("1.1");
+    let mut mismatch = matching.clone();
+    mismatch["digest"] = json!(format!("v1:sha256:{}", "0".repeat(64)));
+    let invalid = rule_set(json!([missing, matching, mismatch]));
+    let mut valid = rule_set(json!([]));
+    valid["id"] = json!("empty");
+    let receipts = set_outcomes(address, set_batch(vec![invalid, valid])).await;
+    assert_eq!(
+        receipts[0],
+        json!({"outcome": "invalid_members", "failures": [
+            {"member_index": 0, "reason": "unregistered"},
+            {"member_index": 2, "reason": "digest_mismatch"}
+        ]})
+    );
+    assert_eq!(receipts[1]["outcome"], "created");
+    let stored_ids: Vec<String> = sqlx::query_scalar("select id from rule_set_registrations")
+        .fetch_all(&pool)
+        .await
+        .expect("read stored sets");
+    assert_eq!(stored_ids, ["empty"]);
+}
+
+// REQ-0033
+#[tokio::test(flavor = "multi_thread")]
+async fn rejects_malformed_rule_set_batches_before_any_writes() {
+    let database = postgres().await;
+    let pool = migrated_pool(&database).await;
+    let address = start_service(pool.clone()).await;
+    let valid = rule_set(json!([]));
+    let mut unknown_field = valid.clone();
+    unknown_field["members"] = json!([set_member()]);
+    unknown_field["members"][0]["unexpected"] = json!(true);
+    let mut long_name = valid.clone();
+    long_name["name"] = json!("📝".repeat(81));
+    let mut bad_host = valid.clone();
+    bad_host["source"] = json!("github.com:443/example/sets");
+    let mut bad_knowledge = valid.clone();
+    bad_knowledge["knowledge"] = json!({"purpose": "missing required fields"});
+    for invalid in [
+        unknown_field,
+        long_name,
+        bad_host,
+        bad_knowledge,
+        rule_set(json!(vec![set_member(); 257])),
+    ] {
+        let body = set_batch(vec![valid.clone(), invalid]).to_string();
+        assert_eq!(submit_to(address, RULE_SET_ROUTE, body).await.0, 400);
+    }
+    let mut body = set_batch(vec![valid.clone()]).to_string();
+    let duplicate = body.replace(r#""version":"1.0""#, r#""version":"1.0","version":"1.0""#);
+    assert_eq!(submit_to(address, RULE_SET_ROUTE, duplicate).await.0, 400);
+    let oversized_batch = set_batch(vec![valid; 101]).to_string();
+    assert_eq!(
+        submit_to(address, RULE_SET_ROUTE, oversized_batch).await.0,
+        400
+    );
+    body.push_str(&" ".repeat(2 * 1024 * 1024));
+    assert_eq!(submit_to(address, RULE_SET_ROUTE, body).await.0, 413);
+    let count: i64 = sqlx::query_scalar("select count(*) from rule_set_registrations")
+        .fetch_one(&pool)
+        .await
+        .expect("count registrations");
+    assert_eq!(count, 0);
 }

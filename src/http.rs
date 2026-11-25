@@ -1,6 +1,7 @@
 use crate::attestation::{Envelope, valid_rule_identity, valid_version};
 use crate::database;
 use crate::registration::{JsonObject, Outcome, RegistrationRequest};
+use crate::rule_set_registration::{RuleSetRequest, SetOutcome};
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path, Query, RawQuery, State};
 use axum::http::StatusCode;
@@ -29,6 +30,10 @@ pub fn router(pool: PgPool) -> Router {
         .route(
             "/v0/rule-registrations",
             post(register).layer(DefaultBodyLimit::max(MAX_REGISTRATION_BODY_BYTES)),
+        )
+        .route(
+            "/v0/rule-set-registrations",
+            post(register_sets).layer(DefaultBodyLimit::max(MAX_REGISTRATION_BODY_BYTES)),
         )
         .with_state(pool)
 }
@@ -64,14 +69,14 @@ async fn ingest(
 }
 
 #[derive(serde::Serialize)]
-struct RegistrationReceipt {
-    outcomes: Vec<Outcome>,
+struct RegistrationReceipt<T> {
+    outcomes: Vec<T>,
 }
 
 async fn register(
     State(pool): State<PgPool>,
     body: Bytes,
-) -> Result<Json<RegistrationReceipt>, StatusCode> {
+) -> Result<Json<RegistrationReceipt<Outcome>>, StatusCode> {
     let (request, digests) =
         RegistrationRequest::parse(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
     let mut outcomes = Vec::with_capacity(digests.len());
@@ -84,6 +89,24 @@ async fn register(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         outcomes.push(Outcome { outcome, digest });
+    }
+    Ok(Json(RegistrationReceipt { outcomes }))
+}
+
+async fn register_sets(
+    State(pool): State<PgPool>,
+    body: Bytes,
+) -> Result<Json<RegistrationReceipt<SetOutcome>>, StatusCode> {
+    let request = RuleSetRequest::parse(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let mut outcomes = Vec::with_capacity(request.sets.len());
+    for set in &request.sets {
+        let outcome = database::register_set(&pool, &request.sender, &request.commit, set)
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, "cannot store the Rule Set registration");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        outcomes.push(outcome);
     }
     Ok(Json(RegistrationReceipt { outcomes }))
 }

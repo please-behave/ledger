@@ -1,5 +1,7 @@
 use crate::attestation::Envelope;
-use crate::registration::{OutcomeKind, Rule};
+use crate::registration::{Outcome, OutcomeKind, Rule};
+use crate::rule_digest::sha256_digest;
+use crate::rule_set_registration::{MemberFailure, RuleSet, SetOutcome};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -157,6 +159,75 @@ pub(crate) async fn register_rule(
     } else {
         OutcomeKind::Conflict
     })
+}
+
+pub(crate) async fn register_set(
+    pool: &PgPool,
+    sender: &str,
+    commit: &str,
+    set: &RuleSet,
+) -> Result<SetOutcome, sqlx::Error> {
+    let members =
+        serde_json::to_string(&set.members).map_err(|error| sqlx::Error::Encode(error.into()))?;
+    let failures = sqlx::query_as::<_, MemberFailure>(
+        "select position - 1 as member_index, \
+                case when rule.digest is null then 'unregistered' \
+                     else 'digest_mismatch' end as reason \
+         from json_array_elements($1::text::json) with ordinality as member(item, position) \
+         left join rule_registrations rule \
+           on rule.source = item->>'source' and rule.path = item->>'path' \
+          and rule.id = item->>'id' and rule.version = item->>'version' \
+         where rule.digest is distinct from item->>'digest' \
+         order by position",
+    )
+    .bind(&members)
+    .fetch_all(pool)
+    .await?;
+    if !failures.is_empty() {
+        return Ok(SetOutcome::InvalidMembers { failures });
+    }
+
+    // Verified rule versions are append-only, so they stay valid through insertion.
+    let digest = sha256_digest(members.as_bytes());
+    let inserted = sqlx::query(
+        "insert into rule_set_registrations \
+         (source, path, id, version, name, description, knowledge, members, digest, sender, commit_sha) \
+         values ($1, $2, $3, $4, $5, $6, $7::text::json, $8::text::json, $9, $10, $11) \
+         on conflict (source, path, id, version) do nothing",
+    )
+    .bind(&set.source)
+    .bind(&set.path)
+    .bind(&set.id)
+    .bind(&set.version)
+    .bind(&set.name)
+    .bind(&set.description)
+    .bind(set.knowledge.as_deref().map(RawValue::get))
+    .bind(&members)
+    .bind(&digest)
+    .bind(sender)
+    .bind(commit)
+    .execute(pool)
+    .await?;
+    let outcome = if inserted.rows_affected() == 1 {
+        OutcomeKind::Created
+    } else {
+        let stored_digest: String = sqlx::query_scalar(
+            "select digest from rule_set_registrations \
+             where source = $1 and path = $2 and id = $3 and version = $4",
+        )
+        .bind(&set.source)
+        .bind(&set.path)
+        .bind(&set.id)
+        .bind(&set.version)
+        .fetch_one(pool)
+        .await?;
+        if stored_digest == digest {
+            OutcomeKind::Unchanged
+        } else {
+            OutcomeKind::Conflict
+        }
+    };
+    Ok(SetOutcome::Registered(Outcome { outcome, digest }))
 }
 
 #[derive(Serialize, FromRow)]
