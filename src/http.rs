@@ -1,6 +1,7 @@
 use crate::attestation::{Envelope, valid_rule_identity, valid_version};
 use crate::database;
-use crate::registration::{JsonObject, Outcome, RegistrationRequest};
+use crate::registration::{JsonObject, Outcome, OutcomeKind, RegistrationRequest};
+use crate::release_fact::ReleaseFact;
 use crate::rule_set_registration::{RuleSetRequest, SetOutcome};
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path, Query, RawQuery, State};
@@ -16,7 +17,7 @@ use uuid::Uuid;
 
 const DEFAULT_PAGE_SIZE: i64 = 100;
 const MAX_PAGE_SIZE: i64 = 200;
-const MAX_REGISTRATION_BODY_BYTES: usize = 2 * 1024 * 1024;
+const MAX_INGEST_BODY_BYTES: usize = 2 * 1024 * 1024;
 
 pub fn router(pool: PgPool) -> Router {
     Router::new()
@@ -36,11 +37,15 @@ pub fn router(pool: PgPool) -> Router {
         )
         .route(
             "/v0/rule-registrations",
-            post(register).layer(DefaultBodyLimit::max(MAX_REGISTRATION_BODY_BYTES)),
+            post(register).layer(DefaultBodyLimit::max(MAX_INGEST_BODY_BYTES)),
         )
         .route(
             "/v0/rule-set-registrations",
-            post(register_sets).layer(DefaultBodyLimit::max(MAX_REGISTRATION_BODY_BYTES)),
+            post(register_sets).layer(DefaultBodyLimit::max(MAX_INGEST_BODY_BYTES)),
+        )
+        .route(
+            "/v0/facts/releases",
+            post(record_release).layer(DefaultBodyLimit::max(MAX_INGEST_BODY_BYTES)),
         )
         .with_state(pool)
 }
@@ -73,6 +78,25 @@ async fn ingest(
         Ok(id) => Ok((StatusCode::CREATED, Json(json!({ "id": id.to_string() })))),
         Err(error) => Err(storage_failure(&error)),
     }
+}
+
+async fn record_release(
+    State(pool): State<PgPool>,
+    body: Bytes,
+) -> Result<(StatusCode, Json<Value>), StatusCode> {
+    let fact = ReleaseFact::parse(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let outcome = database::record_release(&pool, &fact)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, "cannot store the release fact");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    let status = match outcome {
+        OutcomeKind::Created => StatusCode::CREATED,
+        OutcomeKind::Unchanged => StatusCode::OK,
+        OutcomeKind::Conflict => StatusCode::CONFLICT,
+    };
+    Ok((status, Json(json!({ "outcome": outcome }))))
 }
 
 #[derive(serde::Serialize)]

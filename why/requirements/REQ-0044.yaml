@@ -1,0 +1,13 @@
+id: REQ-0044
+name: Preserve the First Release Fact
+description: >-
+  The ledger must store the first release fact for a repository and version
+  with its commit, authenticated sender, authentication method and receipt
+  time, independently of attestations. It must report created for a new key,
+  unchanged for the same commit and conflict for a different commit,
+  preserving the original record in either repeat case.
+rationale: >-
+  A release version must keep its original commit and provenance across
+  retries and conflicting submissions.
+decisions:
+  - why:DEC-0020

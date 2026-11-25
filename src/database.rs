@@ -1,5 +1,6 @@
 use crate::attestation::Envelope;
 use crate::registration::{Outcome, OutcomeKind, Rule};
+use crate::release_fact::ReleaseFact;
 use crate::rule_digest::sha256_digest;
 use crate::rule_set_registration::{MemberFailure, RuleSet, SetOutcome};
 use anyhow::{Context, Result};
@@ -104,6 +105,40 @@ pub async fn append_attestation(
     }
     transaction.commit().await?;
     Ok(id)
+}
+
+pub(crate) async fn record_release(
+    pool: &PgPool,
+    fact: &ReleaseFact,
+) -> Result<OutcomeKind, sqlx::Error> {
+    let inserted = sqlx::query(
+        "insert into release_facts (repository, version, commit_sha, sender, auth_method) \
+         values ($1, $2, $3, $4, $5) on conflict (repository, version) do nothing",
+    )
+    .bind(&fact.repository)
+    .bind(&fact.version)
+    .bind(&fact.commit)
+    .bind(&fact.sender)
+    .bind(fact.auth_method.as_str())
+    .execute(pool)
+    .await?;
+    if inserted.rows_affected() == 1 {
+        return Ok(OutcomeKind::Created);
+    }
+
+    // A separate statement sees the winner even if the insert waited for it.
+    let stored_commit: String = sqlx::query_scalar(
+        "select commit_sha from release_facts where repository = $1 and version = $2",
+    )
+    .bind(&fact.repository)
+    .bind(&fact.version)
+    .fetch_one(pool)
+    .await?;
+    Ok(if stored_commit.eq_ignore_ascii_case(&fact.commit) {
+        OutcomeKind::Unchanged
+    } else {
+        OutcomeKind::Conflict
+    })
 }
 
 pub(crate) async fn register_rule(

@@ -1,0 +1,11 @@
+id: REQ-0043
+name: Validate Release Fact Submissions
+description: >-
+  The ledger must reject release fact submissions that violate the internal
+  ingest contract, including a GitHub OIDC sender reporting for a different
+  repository, before writing any release fact.
+rationale: >-
+  A stored release fact must identify a commit and preserve the repository
+  attribution of its authenticated sender.
+decisions:
+  - why:DEC-0020
