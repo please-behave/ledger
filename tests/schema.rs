@@ -322,6 +322,78 @@ async fn rule_set_registry_migration_preserves_rules_and_stores_set_versions() {
 }
 
 #[tokio::test]
+async fn rule_set_binding_migration_preserves_attestations_and_legacy_inserts() {
+    const MIGRATIONS: Migrator = sqlx::migrate!();
+    const PRE_BINDING_SCHEMA: i64 = 20261125000000;
+
+    let database = postgres().await;
+    let pool = ledger::database::connect(&database.url)
+        .await
+        .expect("connect");
+    MIGRATIONS
+        .run_to(PRE_BINDING_SCHEMA, &pool)
+        .await
+        .expect("apply the preceding schema");
+    insert_attestation(&pool, &[])
+        .await
+        .expect("an existing attestation");
+    insert_result(&pool, &[]).await.expect("an existing result");
+
+    ledger::database::migrate(&pool)
+        .await
+        .expect("add Rule Set bindings");
+    insert_attestation(&pool, &[("id", OTHER_ID)])
+        .await
+        .expect("an attestation inserted by an older build");
+
+    let records: Vec<(String, serde_json::Value, serde_json::Value)> =
+        sqlx::query_as("select overall, document, rule_sets from attestations order by id")
+            .fetch_all(&pool)
+            .await
+            .expect("read the original and legacy rows");
+    assert_eq!(
+        records,
+        vec![
+            (
+                "PASS".to_owned(),
+                serde_json::json!({}),
+                serde_json::json!([])
+            );
+            2
+        ]
+    );
+    let rule_id: String = sqlx::query_scalar("select rule_id from attestation_results")
+        .fetch_one(&pool)
+        .await
+        .expect("read the original result");
+    assert_eq!(rule_id, "format");
+
+    let bindings = serde_json::json!([{
+        "source": "github.com/owner/unregistered",
+        "path": ".",
+        "id": "conventions",
+        "version": "1.0",
+        "execution_points": ["pre-push", "release"]
+    }]);
+    let stored: serde_json::Value = sqlx::query_scalar(
+        "insert into attestations (
+             id, sender, repository, commit_sha, execution_points, overall, schema_version,
+             document, rule_sets
+         )
+         values ($1, 'ci', 'github.com/owner/name', $2, array['pre-push', 'release'],
+                 'PASS', 1, '{}', $3)
+         returning rule_sets",
+    )
+    .bind(uuid::Uuid::now_v7())
+    .bind("0123456789abcdef0123456789abcdef01234567")
+    .bind(&bindings)
+    .fetch_one(&pool)
+    .await
+    .expect("store a binding for an unregistered set");
+    assert_eq!(stored, bindings);
+}
+
+#[tokio::test]
 async fn valid_rows_are_accepted() {
     let database = postgres().await;
     let pool = migrated_pool(&database).await;
