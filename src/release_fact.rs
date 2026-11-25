@@ -6,6 +6,10 @@ use serde::Deserialize;
 // Indexed text must fit in a PostgreSQL B-tree entry even in UTF-8.
 const MAX_KEY_PART_CHARS: usize = 256;
 
+pub(crate) fn valid_release_key_part(part: &str) -> bool {
+    !part.is_empty() && !part.contains('\0') && part.chars().nth(MAX_KEY_PART_CHARS).is_none()
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ReleaseFact {
@@ -21,9 +25,7 @@ impl ReleaseFact {
         let JsonObject(fact) = serde_json::from_slice::<JsonObject<Self>>(body)?;
         for part in [&fact.repository, &fact.version] {
             ensure!(
-                !part.is_empty()
-                    && !part.contains('\0')
-                    && part.chars().nth(MAX_KEY_PART_CHARS).is_none(),
+                valid_release_key_part(part),
                 "invalid repository or version"
             );
         }

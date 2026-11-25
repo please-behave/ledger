@@ -1,0 +1,16 @@
+id: REQ-0048
+name: Release Reads with Commit Evidence
+description: >-
+  The ledger must read a release by repository and version. Every release
+  read must return the recorded version, commit, receipt time, sender and
+  authentication method. Reads must resolve evidence by the stored
+  repository and commit at read time without changing the release.
+  Both lists must include the evidence status and completed Rule Sets.
+  The detail must return full commit evidence. All three reads must
+  explicitly represent absent evidence.
+rationale: >-
+  Readers can assess the reported evidence for a release and see evidence
+  that arrived after its release fact.
+decisions:
+  - why:DEC-0020
+  - why:DEC-0021

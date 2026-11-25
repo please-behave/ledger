@@ -582,8 +582,13 @@ macro_rules! rule_set_compliance_query {
         )
     };
     ($latest_check:literal, $binding_filter:literal, $select:literal) => {
+        rule_set_compliance_query!("", $latest_check, $binding_filter, $select)
+    };
+    ($prefix:expr, $latest_check:literal, $binding_filter:literal, $select:literal) => {
         concat!(
-            "with latest_check as (",
+            "with ",
+            $prefix,
+            "latest_check as (",
             $latest_check,
             "), bindings as (
                  select distinct a.repository, a.id as attestation_id,
@@ -656,6 +661,27 @@ pub(crate) async fn completed_rule_sets(
     .await
 }
 
+// Select one attestation for each requested pair before evaluating its bindings.
+macro_rules! commit_evidence_query {
+    ($prefix:expr, $select:literal) => {
+        rule_set_compliance_query!(
+            $prefix,
+            "select k.repository, k.commit_sha, a.*
+             from evidence_keys k
+             cross join lateral (
+                 select id, overall, received_at, sender, rule_sets,
+                        document->>'auth_method' as auth_method
+                 from attestations
+                 where repository = k.repository and commit_sha = k.commit_sha
+                   and execution_points @> array['check']
+                 order by received_at desc, id desc limit 1
+             ) a",
+            "",
+            $select
+        )
+    };
+}
+
 #[derive(Serialize, FromRow)]
 pub(crate) struct CommitEvidence {
     id: String,
@@ -671,14 +697,8 @@ pub(crate) async fn commit_evidence(
     repository: &str,
     commit: &str,
 ) -> Result<Option<CommitEvidence>, sqlx::Error> {
-    sqlx::query_as(rule_set_compliance_query!(
-        "select repository, id, overall, received_at, sender, rule_sets,
-                document->>'auth_method' as auth_method
-         from attestations
-         where repository = $1 and commit_sha = $2 and execution_points @> array['check']
-         order by received_at desc, id desc
-         limit 1",
-        "",
+    sqlx::query_as(commit_evidence_query!(
+        "evidence_keys as (select $1::text as repository, $2::text as commit_sha), ",
         r#"select id::text as id, overall, sender, auth_method,
                   to_char(received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as received_at,
                   coalesce((
@@ -695,6 +715,120 @@ pub(crate) async fn commit_evidence(
     .bind(commit)
     .fetch_optional(pool)
     .await
+}
+
+#[derive(Serialize, FromRow)]
+pub(crate) struct Release {
+    repository: String,
+    version: String,
+    commit: String,
+    received_at: String,
+    sender: String,
+    auth_method: String,
+}
+
+#[derive(Serialize, FromRow)]
+pub(crate) struct ReleaseSummary {
+    #[serde(flatten)]
+    #[sqlx(flatten)]
+    release: Release,
+    evidence: Option<Json<Value>>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct ReleaseDetail {
+    #[serde(flatten)]
+    release: Release,
+    evidence: Option<CommitEvidence>,
+}
+
+pub(crate) async fn release_detail(
+    pool: &PgPool,
+    repository: &str,
+    version: &str,
+) -> Result<Option<ReleaseDetail>, sqlx::Error> {
+    let release: Option<Release> = sqlx::query_as(
+        r#"select repository, version, commit_sha as commit, sender, auth_method,
+                  to_char(received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as received_at
+           from release_facts where repository = $1 and version = $2"#,
+    )
+    .bind(repository)
+    .bind(version)
+    .fetch_optional(pool)
+    .await?;
+    let Some(release) = release else {
+        return Ok(None);
+    };
+    let evidence = commit_evidence(pool, repository, &release.commit).await?;
+    Ok(Some(ReleaseDetail { release, evidence }))
+}
+
+macro_rules! release_page_query {
+    ($candidates:literal) => {
+        commit_evidence_query!(
+            concat!(
+                "candidates as (", $candidates, "),
+                 page as (
+                     select * from candidates r
+                     where ($2::text is null or (r.received_at, r.repository, r.version) < (
+                         select received_at, repository, version
+                         from release_facts where repository = $2 and version = $3
+                     ))
+                     order by r.received_at desc, r.repository desc, r.version desc
+                     limit $4
+                 ), evidence_keys as (select distinct repository, commit_sha from page), "
+            ),
+            r#"select r.repository, r.version, r.commit_sha as commit, r.sender, r.auth_method,
+                      to_char(r.received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as received_at,
+                      case when a.id is not null then json_build_object(
+                          'overall', a.overall,
+                          'completed_rule_sets', coalesce((
+                              select json_agg(json_build_object(
+                                  'source', source, 'path', path, 'id', id, 'version', version, 'name', name
+                              ) order by source, path, id, version)
+                              from compliance where attestation_id = a.id and complete
+                          ), '[]'::json)
+                      ) end as evidence
+               from page r left join latest_check a using (repository, commit_sha)
+               order by r.received_at desc, r.repository desc, r.version desc"#
+        )
+    };
+}
+
+pub(crate) async fn release_page(
+    pool: &PgPool,
+    repository: Option<&str>,
+    before: Option<(&str, &str)>,
+    limit: i64,
+) -> Result<Option<Vec<ReleaseSummary>>, sqlx::Error> {
+    if let Some((repository, version)) = before {
+        let exists: bool = sqlx::query_scalar(
+            "select exists(select from release_facts where repository = $1 and version = $2)",
+        )
+        .bind(repository)
+        .bind(version)
+        .fetch_one(pool)
+        .await?;
+        if !exists {
+            return Ok(None);
+        }
+    }
+    let query = if repository.is_some() {
+        release_page_query!("select * from release_facts where repository = $1")
+    } else {
+        release_page_query!(
+            "select distinct on (repository) * from release_facts where $1::text is null
+             order by repository, received_at desc, version desc"
+        )
+    };
+    sqlx::query_as(query)
+        .bind(repository)
+        .bind(before.map(|(repository, _)| repository))
+        .bind(before.map(|(_, version)| version))
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+        .map(Some)
 }
 
 #[derive(Serialize, FromRow)]

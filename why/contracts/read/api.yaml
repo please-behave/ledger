@@ -79,3 +79,23 @@ contracts:
     requirements:
       - REQ-0019
       - REQ-0046
+  - id: CON-0017
+    name: Latest Releases
+    document: latest-releases.md
+    schema: releases.schema.json
+    requirements:
+      - REQ-0047
+      - REQ-0048
+  - id: CON-0018
+    name: Release History
+    document: releases.md
+    schema: releases.schema.json
+    requirements:
+      - REQ-0047
+      - REQ-0048
+  - id: CON-0019
+    name: Release Detail
+    document: release.md
+    schema: release.schema.json
+    requirements:
+      - REQ-0048

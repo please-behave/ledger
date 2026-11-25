@@ -1,0 +1,12 @@
+id: REQ-0047
+name: Paged Release Lists
+description: >-
+  The ledger must list the newest recorded release of each repository
+  with releases and list the release history of a specified repository.
+  Both lists must use receipt time to determine recency and support
+  bounded pages with an exclusive cursor and deterministic tie ordering.
+rationale: >-
+  Readers can discover repositories with releases and load release
+  history incrementally using the order in which facts were recorded.
+decisions:
+  - why:DEC-0020

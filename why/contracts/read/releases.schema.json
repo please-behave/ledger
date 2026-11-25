@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Release summaries",
+  "type": "array",
+  "items": { "$ref": "#/$defs/summary" },
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "version", "commit", "sender", "auth_method", "received_at", "evidence"],
+      "properties": {
+        "repository": { "$ref": "../ingest/release-fact.schema.json#/properties/repository" },
+        "version": { "$ref": "../ingest/release-fact.schema.json#/properties/version" },
+        "commit": { "$ref": "../ingest/release-fact.schema.json#/properties/commit" },
+        "sender": { "$ref": "../ingest/release-fact.schema.json#/properties/sender" },
+        "auth_method": { "$ref": "../ingest/release-fact.schema.json#/properties/auth_method" },
+        "received_at": { "$ref": "attestation.schema.json#/$defs/summary/properties/received_at" },
+        "evidence": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["overall", "completed_rule_sets"],
+          "properties": {
+            "overall": { "$ref": "attestation.schema.json#/$defs/summary/properties/overall" },
+            "completed_rule_sets": {
+              "type": "array",
+              "items": { "$ref": "completed-rule-sets.schema.json#/items/properties/sets/items" }
+            }
+          }
+        }
+      }
+    },
+    "cursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "version"],
+      "properties": {
+        "repository": { "$ref": "../ingest/release-fact.schema.json#/properties/repository" },
+        "version": { "$ref": "../ingest/release-fact.schema.json#/properties/version" }
+      }
+    }
+  }
+}

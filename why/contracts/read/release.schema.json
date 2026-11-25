@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Release detail",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repository", "version", "commit", "sender", "auth_method", "received_at", "evidence"],
+  "properties": {
+    "repository": { "$ref": "releases.schema.json#/$defs/summary/properties/repository" },
+    "version": { "$ref": "releases.schema.json#/$defs/summary/properties/version" },
+    "commit": { "$ref": "releases.schema.json#/$defs/summary/properties/commit" },
+    "sender": { "$ref": "releases.schema.json#/$defs/summary/properties/sender" },
+    "auth_method": { "$ref": "releases.schema.json#/$defs/summary/properties/auth_method" },
+    "received_at": { "$ref": "releases.schema.json#/$defs/summary/properties/received_at" },
+    "evidence": { "$ref": "commit-evidence.schema.json#/properties/evidence" }
+  }
+}

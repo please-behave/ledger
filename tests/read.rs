@@ -86,6 +86,19 @@ async fn commit_evidence(address: SocketAddr, repository: &str, commit: &str) ->
     body["evidence"].clone()
 }
 
+async fn record_release(address: SocketAddr, repository: &str, version: &str, commit: &str) {
+    let body = json!({
+        "repository": repository, "version": version, "commit": commit,
+        "sender": "release-ci", "auth_method": "api_key"
+    })
+    .to_string();
+    let (status, receipt) =
+        tokio::task::spawn_blocking(move || post(address, "/v0/facts/releases", &body))
+            .await
+            .expect("release submission finishes");
+    assert_eq!(status, 201, "{receipt}");
+}
+
 async fn register_for_compliance(
     address: SocketAddr,
     route: &'static str,
@@ -132,7 +145,7 @@ fn compliance_evidence(
     report
 }
 
-// REQ-0040, REQ-0041, REQ-0046: the reads share completeness for check evidence.
+// REQ-0040, REQ-0041, REQ-0046, REQ-0048: the reads share completeness for check evidence.
 #[tokio::test(flavor = "multi_thread")]
 async fn rule_set_compliance_uses_only_the_newest_check_evidence() {
     let postgres = postgres().await;
@@ -280,6 +293,32 @@ async fn rule_set_compliance_uses_only_the_newest_check_evidence() {
              "registered": false, "complete": false, "non_passing_members": []}
         ])
     );
+    for repository in ["complete", "incomplete", "unknown"] {
+        record_release(address, repository, "v1", COMMIT).await;
+        let (_, releases) =
+            read_json(address, format!("/v0/releases?repository={repository}")).await;
+        let (_, release) = read_json(
+            address,
+            format!("/v0/releases/detail?repository={repository}&version=v1"),
+        )
+        .await;
+        assert_eq!(
+            release["evidence"],
+            commit_evidence(address, repository, COMMIT).await
+        );
+        let completed = if repository == "complete" {
+            json!([
+                {"source": SET_SOURCE, "path": ".", "id": "baseline", "version": "1.0", "name": "Baseline"},
+                {"source": SET_SOURCE, "path": ".", "id": "secondary", "version": "1.0", "name": "secondary"}
+            ])
+        } else {
+            json!([])
+        };
+        assert_eq!(
+            releases[0]["evidence"],
+            json!({"overall": release["evidence"]["overall"], "completed_rule_sets": completed})
+        );
+    }
     for repository in ["no-longer-bound", "ignored-binding"] {
         assert_eq!(
             commit_evidence(address, repository, COMMIT).await["rule_sets"],
@@ -383,6 +422,128 @@ async fn commit_evidence_selects_the_newest_check_for_the_exact_pair() {
                 .await
                 .expect("ingest finishes");
         assert_eq!(status, 400);
+    }
+}
+
+// REQ-0047, REQ-0048: release reads page by receipt and observe late evidence.
+#[tokio::test(flavor = "multi_thread")]
+async fn release_reads_page_by_receipt_and_show_late_evidence() {
+    let postgres = postgres().await;
+    let pool = migrated_pool(&postgres).await;
+    let address = start_service(pool.clone()).await;
+    let newest_commit = commit('1');
+    let repository = "github.com/example/project";
+    let history = "/v0/releases?repository=github.com%2Fexample%2Fproject";
+    let latest = "/v0/releases/latest";
+    let detail = "/v0/releases/detail?repository=github.com%2Fexample%2Fproject&version=v1%2F%2B";
+    let cursor = "%7B%22repository%22%3A%22github.com%2Fexample%2Fproject%22%2C%22version%22%3A%22v1%2F%2B%22%7D";
+
+    record_release(address, repository, "v99", COMMIT).await;
+    record_release(address, repository, "v0", COMMIT).await;
+    record_release(address, repository, "v1/+", &newest_commit).await;
+    record_release(address, "another", "v2", COMMIT).await;
+    sqlx::query(
+        "update release_facts set received_at = case when version = 'v99'
+         then '2026-11-24T00:00:00Z'::timestamptz else '2026-11-25T00:00:00Z'::timestamptz end",
+    )
+    .execute(&pool)
+    .await
+    .expect("fix receipt times to exercise both ordering keys");
+
+    ingest(
+        address,
+        envelope("unreleased", &["check"], &newest_commit, &[]),
+    )
+    .await;
+    ingest(address, envelope(repository, &["check"], COMMIT, &[])).await;
+    ingest(address, envelope(repository, &["ci"], &newest_commit, &[])).await;
+    let fact = json!({
+        "repository": repository, "version": "v1/+", "commit": newest_commit,
+        "sender": "release-ci", "auth_method": "api_key",
+        "received_at": "2026-11-25T00:00:00.000000Z", "evidence": null
+    });
+    assert_eq!(
+        read(
+            address,
+            "/v0/releases/detail?repository=another&version=unknown"
+        )
+        .await
+        .0,
+        404
+    );
+    assert_eq!(read_json(address, detail.into()).await, (200, fact.clone()));
+    for path in [latest, history] {
+        assert_eq!(
+            read_json(
+                address,
+                format!(
+                    "{path}{}limit=1",
+                    if path.contains('?') { '&' } else { '?' }
+                )
+            )
+            .await,
+            (200, json!([fact]))
+        );
+    }
+
+    let (status, next) = read_json(address, format!("{latest}?before={cursor}")).await;
+    assert_eq!(status, 200);
+    assert_eq!(next.as_array().unwrap().len(), 1);
+    assert_eq!(next[0]["repository"], "another");
+    assert!(next[0].get("evidence").unwrap().is_null());
+
+    let (status, next) = read_json(address, format!("{history}&before={cursor}")).await;
+    assert_eq!(status, 200);
+    let versions: Vec<_> = next
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["version"].as_str().unwrap())
+        .collect();
+    assert_eq!(versions, ["v0", "v99"]);
+    assert_eq!(
+        next[0]["evidence"],
+        json!({"overall": "PASS", "completed_rule_sets": []})
+    );
+
+    let mut report = envelope(repository, &["check"], &newest_commit, &["FAIL"]);
+    report["attestation"]["overall"] = json!("FAIL");
+    let evidence_id = ingest(address, report).await;
+    let (status, mut release) = read_json(address, detail.into()).await;
+    assert_eq!(status, 200);
+    assert_eq!(release["evidence"]["id"], evidence_id);
+    assert_eq!(
+        release["evidence"],
+        commit_evidence(address, "github.com%2Fexample%2Fproject", &newest_commit).await
+    );
+    release["evidence"] = Value::Null;
+    assert_eq!(release, fact);
+    for path in [latest, history] {
+        let (status, list) = read_json(address, path.into()).await;
+        assert_eq!(status, 200);
+        assert_eq!(
+            list[0]["evidence"],
+            json!({"overall": "FAIL", "completed_rule_sets": []})
+        );
+    }
+
+    assert_eq!(
+        read_json(address, "/v0/releases?repository=missing".into()).await,
+        (200, json!([]))
+    );
+    for path in [
+        "/v0/releases".into(),
+        format!("{history}&limit=0"),
+        format!("{history}&limit=201"),
+        format!("{history}&limit=1&limit=2"),
+        format!("{latest}?repository=another"),
+        format!("{latest}?before=invalid"),
+        format!("{latest}?before={}", cursor.replace("v1%2F%2B", "unknown")),
+        format!("/v0/releases?repository=another&before={cursor}"),
+        "/v0/releases/detail?repository=another&version=%00".into(),
+        "/v0/releases/detail?repository=another&version=v2&extra=1".into(),
+    ] {
+        assert_eq!(read_json(address, path.clone()).await.0, 400, "{path}");
     }
 }
 

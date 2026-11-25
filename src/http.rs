@@ -1,7 +1,7 @@
 use crate::attestation::{Envelope, valid_commit, valid_rule_identity, valid_version};
 use crate::database;
 use crate::registration::{JsonObject, Outcome, OutcomeKind, RegistrationRequest};
-use crate::release_fact::ReleaseFact;
+use crate::release_fact::{ReleaseFact, valid_release_key_part};
 use crate::rule_set_registration::{RuleSetRequest, SetOutcome};
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path, Query, RawQuery, State};
@@ -27,6 +27,9 @@ pub fn router(pool: PgPool) -> Router {
         .route("/v0/attestations/latest", get(latest))
         .route("/v0/attestations/{id}", get(read))
         .route("/v0/repositories/commit-evidence", get(commit_evidence))
+        .route("/v0/releases", get(release_history))
+        .route("/v0/releases/latest", get(latest_releases))
+        .route("/v0/releases/detail", get(release_detail))
         .route("/v0/rules", get(rules))
         .route("/v0/rules/detail", get(rule_detail))
         .route("/v0/rule-sets", get(rule_sets))
@@ -220,6 +223,88 @@ async fn commit_evidence(
     Ok(Json(json!({ "evidence": evidence })))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReleaseKey {
+    repository: String,
+    version: String,
+}
+
+impl ReleaseKey {
+    fn parts(&self) -> Result<(&str, &str), StatusCode> {
+        if !valid_release_key_part(&self.repository) || !valid_release_key_part(&self.version) {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        Ok((&self.repository, &self.version))
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReleasePage {
+    repository: Option<String>,
+    limit: Option<i64>,
+    before: Option<String>,
+}
+
+async fn release_history(
+    State(pool): State<PgPool>,
+    Query(page): Query<ReleasePage>,
+) -> Result<Json<Vec<database::ReleaseSummary>>, StatusCode> {
+    if !page
+        .repository
+        .as_deref()
+        .is_some_and(valid_release_key_part)
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    release_list(&pool, page).await
+}
+
+async fn latest_releases(
+    State(pool): State<PgPool>,
+    Query(page): Query<ReleasePage>,
+) -> Result<Json<Vec<database::ReleaseSummary>>, StatusCode> {
+    if page.repository.is_some() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    release_list(&pool, page).await
+}
+
+async fn release_list(
+    pool: &PgPool,
+    page: ReleasePage,
+) -> Result<Json<Vec<database::ReleaseSummary>>, StatusCode> {
+    let limit = page_limit(page.limit)?;
+    let cursor = page
+        .before
+        .as_deref()
+        .map(serde_json::from_str::<JsonObject<ReleaseKey>>)
+        .transpose()
+        .map_err(|_| StatusCode::BAD_REQUEST)?
+        .map(|JsonObject(key)| key);
+    let before = cursor.as_ref().map(ReleaseKey::parts).transpose()?;
+    let repository = page.repository.as_deref();
+    if let Some((cursor_repository, _)) = before
+        && repository.is_some_and(|repository| repository != cursor_repository)
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    paged_response(database::release_page(pool, repository, before, limit).await)
+}
+
+async fn release_detail(
+    State(pool): State<PgPool>,
+    Query(key): Query<ReleaseKey>,
+) -> Result<Json<database::ReleaseDetail>, StatusCode> {
+    let (repository, version) = key.parts()?;
+    database::release_detail(&pool, repository, version)
+        .await
+        .map_err(|error| read_failure(&error))?
+        .map(Json)
+        .ok_or(StatusCode::NOT_FOUND)
+}
+
 fn read_failure(error: &sqlx::Error) -> StatusCode {
     tracing::error!(%error, "cannot read from the ledger");
     StatusCode::INTERNAL_SERVER_ERROR
@@ -282,7 +367,7 @@ async fn rules(
     Query(page): Query<RegistryPage>,
 ) -> Result<Json<Vec<database::RegistryEntry<database::RuleSummary>>>, StatusCode> {
     let (before, limit) = page.parameters()?;
-    registry_page(database::registered_rules(&pool, before.as_ref(), limit).await)
+    paged_response(database::registered_rules(&pool, before.as_ref(), limit).await)
 }
 
 async fn rule_sets(
@@ -290,10 +375,12 @@ async fn rule_sets(
     Query(page): Query<RegistryPage>,
 ) -> Result<Json<Vec<database::RegistryEntry<database::RuleSetSummary>>>, StatusCode> {
     let (before, limit) = page.parameters()?;
-    registry_page(database::registered_sets(&pool, before.as_ref(), limit).await)
+    paged_response(database::registered_sets(&pool, before.as_ref(), limit).await)
 }
 
-fn registry_page<T>(page: Result<Option<Vec<T>>, sqlx::Error>) -> Result<Json<Vec<T>>, StatusCode> {
+fn paged_response<T>(
+    page: Result<Option<Vec<T>>, sqlx::Error>,
+) -> Result<Json<Vec<T>>, StatusCode> {
     page.map_err(|error| read_failure(&error))?
         .map(Json)
         .ok_or(StatusCode::BAD_REQUEST)
