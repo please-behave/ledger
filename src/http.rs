@@ -29,6 +29,11 @@ pub fn router(pool: PgPool) -> Router {
         .route("/v0/rules/detail", get(rule_detail))
         .route("/v0/rule-sets", get(rule_sets))
         .route("/v0/rule-sets/detail", get(rule_set_detail))
+        .route("/v0/rule-sets/compliance", get(rule_set_compliance))
+        .route(
+            "/v0/repositories/completed-rule-sets",
+            get(completed_rule_sets),
+        )
         .route(
             "/v0/rule-registrations",
             post(register).layer(DefaultBodyLimit::max(MAX_REGISTRATION_BODY_BYTES)),
@@ -263,6 +268,26 @@ async fn rule_set_detail(
 ) -> Result<Json<Vec<database::RuleSetVersion>>, StatusCode> {
     let (source, path, id) = identity.parts()?;
     version_history(database::registered_set_versions(&pool, source, path, id).await)
+}
+
+async fn rule_set_compliance(
+    State(pool): State<PgPool>,
+    Query(identity): Query<RegistryIdentity>,
+) -> Result<Json<Vec<database::RuleSetCompliance>>, StatusCode> {
+    let (source, path, id) = identity.parts()?;
+    database::rule_set_compliance(&pool, source, path, id)
+        .await
+        .map(Json)
+        .map_err(|error| read_failure(&error))
+}
+
+async fn completed_rule_sets(
+    State(pool): State<PgPool>,
+) -> Result<Json<Vec<database::CompletedRuleSets>>, StatusCode> {
+    database::completed_rule_sets(&pool)
+        .await
+        .map(Json)
+        .map_err(|error| read_failure(&error))
 }
 
 fn version_history<T>(versions: Result<Vec<T>, sqlx::Error>) -> Result<Json<Vec<T>>, StatusCode> {

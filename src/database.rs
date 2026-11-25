@@ -474,6 +474,100 @@ pub(crate) async fn registered_set_versions(
 }
 
 #[derive(Serialize, FromRow)]
+pub(crate) struct RuleSetCompliance {
+    repository: String,
+    version: String,
+    registered: bool,
+    complete: bool,
+    non_passing_members: Json<Value>,
+}
+
+#[derive(Serialize, FromRow)]
+pub(crate) struct CompletedRuleSets {
+    repository: String,
+    sets: Json<Value>,
+}
+
+macro_rules! rule_set_compliance_query {
+    ($binding_filter:literal, $select:literal) => {
+        concat!(
+            "with latest_check as (
+                 select distinct on (repository) repository, id, rule_sets
+                 from attestations
+                 where execution_points @> array['check']
+                 order by repository, received_at desc, id desc
+             ), bindings as (
+                 select distinct a.repository, a.id as attestation_id,
+                        binding->>'source' as source, binding->>'path' as path,
+                        binding->>'id' as id, binding->>'version' as version
+                 from latest_check a
+                 cross join lateral jsonb_array_elements(a.rule_sets) as binding
+                 where binding->'execution_points' ? 'check' ",
+            $binding_filter,
+            "
+             ), compliance as (
+                 select b.*, coalesce(s.name, b.id) as name, s.version is not null as registered,
+                        s.version is not null and failures.members is null as complete,
+                        coalesce(failures.members, '[]'::json) as non_passing_members
+                 from bindings b
+                 left join rule_set_registrations s using (source, path, id, version)
+                 cross join lateral (
+                     select json_agg(json_build_object(
+                         'source', member->>'source', 'path', member->>'path',
+                         'id', member->>'id', 'version', member->>'version',
+                         'status', coalesce(result.status, 'NOT_RUN')
+                     ) order by position, result.status) as members
+                     from json_array_elements(s.members) with ordinality as m(member, position)
+                     left join lateral (
+                         select distinct r.status
+                         from attestation_results r
+                         where r.attestation_id = b.attestation_id
+                           and r.rule_source = member->>'source'
+                           and r.rule_path = member->>'path'
+                           and r.rule_local_id = member->>'id'
+                     ) result on true
+                     where result.status is distinct from 'PASS'
+                 ) failures
+             ) ",
+            $select
+        )
+    };
+}
+
+pub(crate) async fn rule_set_compliance(
+    pool: &PgPool,
+    source: &str,
+    path: &str,
+    id: &str,
+) -> Result<Vec<RuleSetCompliance>, sqlx::Error> {
+    sqlx::query_as(rule_set_compliance_query!(
+        "and (binding->>'source', binding->>'path', binding->>'id') = ($1, $2, $3)",
+        "select repository, version, registered, complete, non_passing_members
+         from compliance order by repository, version"
+    ))
+    .bind(source)
+    .bind(path)
+    .bind(id)
+    .fetch_all(pool)
+    .await
+}
+
+pub(crate) async fn completed_rule_sets(
+    pool: &PgPool,
+) -> Result<Vec<CompletedRuleSets>, sqlx::Error> {
+    sqlx::query_as(rule_set_compliance_query!(
+        "",
+        "select repository, json_agg(json_build_object(
+             'source', source, 'path', path, 'id', id, 'version', version, 'name', name
+         ) order by source, path, id, version) as sets
+         from compliance where complete
+         group by repository order by repository"
+    ))
+    .fetch_all(pool)
+    .await
+}
+
+#[derive(Serialize, FromRow)]
 pub struct Summary {
     id: String,
     received_at: String,

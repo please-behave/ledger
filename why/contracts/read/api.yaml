@@ -58,3 +58,16 @@ contracts:
     schema: rule-set.schema.json
     requirements:
       - REQ-0039
+  - id: CON-0013
+    name: Rule Set Compliance by Repository
+    document: rule-set-compliance.md
+    schema: rule-set-compliance.schema.json
+    requirements:
+      - REQ-0040
+  - id: CON-0014
+    name: Completed Rule Sets by Repository
+    document: completed-rule-sets.md
+    schema: completed-rule-sets.schema.json
+    requirements:
+      - REQ-0040
+      - REQ-0041

@@ -69,6 +69,194 @@ async fn latest(address: SocketAddr) -> Vec<Value> {
     body.as_array().expect("an array").clone()
 }
 
+const SET_SOURCE: &str = "github.com/example/sets";
+const SET_COMPLIANCE: &str =
+    "/v0/rule-sets/compliance?source=github.com%2Fexample%2Fsets&path=.&id=baseline";
+const COMPLETED_SETS: &str = "/v0/repositories/completed-rule-sets";
+
+async fn register_for_compliance(
+    address: SocketAddr,
+    route: &'static str,
+    request: Value,
+) -> Value {
+    let (status, receipt) =
+        tokio::task::spawn_blocking(move || post(address, route, &request.to_string()))
+            .await
+            .expect("registration finishes");
+    assert_eq!(status, 200, "{receipt}");
+    let receipt: Value = serde_json::from_str(&receipt).unwrap();
+    let outcomes = receipt["outcomes"].as_array().unwrap();
+    assert!(
+        outcomes
+            .iter()
+            .all(|outcome| outcome["outcome"] == "created")
+    );
+    json!(outcomes)
+}
+
+fn set_binding(id: &str, version: &str, points: &[&str]) -> Value {
+    json!({
+        "source": SET_SOURCE, "path": ".", "id": id, "version": version,
+        "execution_points": points
+    })
+}
+
+fn compliance_evidence(
+    repository: &str,
+    points: &[&str],
+    bindings: &[Value],
+    rules: &[Value],
+    statuses: &[&str],
+) -> Value {
+    let mut report = envelope(repository, points, COMMIT, statuses);
+    report["attestation"]["rule_sets"] = json!(bindings);
+    let results = report["attestation"]["results"].as_array_mut().unwrap();
+    assert_eq!(results.len(), rules.len());
+    for (result, rule) in results.iter_mut().zip(rules) {
+        result["rule"] = json!({
+            "source": rule["source"], "path": rule["path"], "id": rule["id"]
+        });
+    }
+    report
+}
+
+// REQ-0040, REQ-0041: both reads evaluate the currently bound versions against check evidence.
+#[tokio::test(flavor = "multi_thread")]
+async fn rule_set_compliance_uses_only_the_newest_check_evidence() {
+    let postgres = postgres().await;
+    let address = start_service(migrated_pool(&postgres).await).await;
+    let rules: Vec<Value> = (0..5)
+        .map(|index| {
+            json!({
+                "source": "github.com/example/rules", "path": ".please/checks",
+                "id": format!("member-{index}"), "version": "1.0", "kind": "check"
+            })
+        })
+        .collect();
+    let outcomes = register_for_compliance(
+        address,
+        "/v0/rule-registrations",
+        json!({"sender": "ci", "commit": COMMIT, "rules": rules}),
+    )
+    .await;
+    let members: Vec<Value> = rules.iter().enumerate().map(|(index, rule)| {
+        json!({
+            "source": rule["source"], "path": rule["path"], "id": rule["id"],
+            "version": rule["version"], "digest": outcomes[index]["digest"], "enabled": index != 2
+        })
+    }).collect();
+    let baseline = set_binding("baseline", "1.0", &["check"]);
+    let secondary = set_binding("secondary", "1.0", &["check"]);
+    let unregistered = set_binding("baseline", "9.0", &["check"]);
+    let mut registered_sets = Vec::new();
+    for (id, version, name, members) in [
+        ("baseline", "1.0", Some("Baseline"), &members[..]),
+        ("baseline", "2.0", Some("New baseline"), &members[..1]),
+        ("secondary", "1.0", None, &members[..1]),
+    ] {
+        let mut set = json!({
+            "source": SET_SOURCE, "path": ".", "id": id, "version": version, "members": members
+        });
+        if let Some(name) = name {
+            set["name"] = json!(name);
+        }
+        registered_sets.push(set);
+    }
+    register_for_compliance(
+        address,
+        "/v0/rule-set-registrations",
+        json!({"sender": "ci", "commit": COMMIT, "sets": registered_sets}),
+    )
+    .await;
+
+    for (repository, points, bindings) in [
+        (
+            "complete",
+            &["check", "ci"][..],
+            vec![baseline.clone(), baseline.clone(), secondary],
+        ),
+        ("ignored-run", &["ci"][..], vec![baseline.clone()]),
+        (
+            "ignored-binding",
+            &["check"][..],
+            vec![set_binding("baseline", "1.0", &["ci"])],
+        ),
+        ("unknown", &["check"][..], vec![unregistered]),
+        ("no-longer-bound", &["check"][..], vec![baseline.clone()]),
+        ("incomplete", &["check"][..], vec![baseline.clone()]),
+    ] {
+        ingest(
+            address,
+            compliance_evidence(repository, points, &bindings, &rules, &["PASS"; 5]),
+        )
+        .await;
+    }
+    ingest(
+        address,
+        envelope("no-longer-bound", &["check"], COMMIT, &["PASS"]),
+    )
+    .await;
+    ingest(
+        address,
+        envelope("complete", &["pre-push"], COMMIT, &["FAIL"]),
+    )
+    .await;
+
+    let mut failing_rules = rules.clone();
+    failing_rules[4]["path"] = json!(".please/checks/unrelated");
+    let mut failure = compliance_evidence(
+        "incomplete",
+        &["ci", "check"],
+        &[baseline],
+        &failing_rules,
+        &["FAIL", "ERROR", "WARN", "NOT_RUN", "PASS"],
+    );
+    failure["attestation"]["results"][4]["id"] = rules[4]["id"].clone();
+    ingest(address, failure).await;
+
+    let failures: Vec<Value> = rules
+        .iter()
+        .zip(["FAIL", "ERROR", "WARN", "NOT_RUN", "NOT_RUN"])
+        .map(|(rule, status)| {
+            json!({
+                "source": rule["source"], "path": rule["path"], "id": rule["id"],
+                "version": rule["version"], "status": status
+            })
+        })
+        .collect();
+    assert_eq!(
+        read_json(address, SET_COMPLIANCE.to_string()).await,
+        (
+            200,
+            json!([
+                {"repository": "complete", "version": "1.0", "registered": true, "complete": true, "non_passing_members": []},
+                {"repository": "incomplete", "version": "1.0", "registered": true, "complete": false, "non_passing_members": failures},
+                {"repository": "unknown", "version": "9.0", "registered": false, "complete": false, "non_passing_members": []}
+            ])
+        )
+    );
+    assert_eq!(
+        read_json(address, COMPLETED_SETS.to_string()).await,
+        (
+            200,
+            json!([{"repository": "complete", "sets": [
+                {"source": SET_SOURCE, "path": ".", "id": "baseline", "version": "1.0", "name": "Baseline"},
+                {"source": SET_SOURCE, "path": ".", "id": "secondary", "version": "1.0", "name": "secondary"}
+            ]}])
+        )
+    );
+    assert_eq!(
+        read_json(address, SET_COMPLIANCE.replace("baseline", "absent")).await,
+        (200, json!([]))
+    );
+    assert_eq!(
+        read_json(address, format!("{SET_COMPLIANCE}&id=duplicate"))
+            .await
+            .0,
+        400
+    );
+}
+
 // REQ-0015: the newest attestation of every repository and execution points, in a stable order.
 #[tokio::test(flavor = "multi_thread")]
 async fn latest_selects_the_newest_attestation_of_every_combination_in_order() {

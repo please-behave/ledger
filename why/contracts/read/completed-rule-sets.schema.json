@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Completed Rule Sets by repository",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["repository", "sets"],
+    "properties": {
+      "repository": { "$ref": "attestation.schema.json#/$defs/summary/properties/repository" },
+      "sets": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "path", "id", "version", "name"],
+          "properties": {
+            "source": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/source" },
+            "path": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/path" },
+            "id": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/id" },
+            "version": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/version" },
+            "name": { "$ref": "rule-sets.schema.json#/items/properties/name" }
+          }
+        }
+      }
+    }
+  }
+}

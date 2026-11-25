@@ -1,0 +1,14 @@
+id: REQ-0040
+name: Rule Set Compliance by Repository
+description: >-
+  For a Rule Set identity, the ledger must report each repository and version
+  bound at `check` in that repository's newest attestation containing `check`.
+  Each entry must state whether the bound version is registered and whether it
+  is complete under why:DEC-0019. For a registered version, the entry must
+  identify every member with a non-PASS result or no matching result and
+  report its status, using NOT_RUN for a missing result.
+rationale: >-
+  Readers can see which repositories apply the Rule Set and which members
+  prevent them from meeting it.
+decisions:
+  - why:DEC-0019

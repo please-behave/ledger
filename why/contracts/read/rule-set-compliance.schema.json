@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Rule Set compliance by repository",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["repository", "version", "registered", "complete", "non_passing_members"],
+    "properties": {
+      "repository": { "$ref": "attestation.schema.json#/$defs/summary/properties/repository" },
+      "version": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/version" },
+      "registered": { "type": "boolean" },
+      "complete": { "type": "boolean" },
+      "non_passing_members": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "path", "id", "version", "status"],
+          "properties": {
+            "source": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/source" },
+            "path": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/path" },
+            "id": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/id" },
+            "version": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/version" },
+            "status": { "enum": ["FAIL", "ERROR", "WARN", "NOT_RUN"] }
+          }
+        }
+      }
+    }
+  }
+}

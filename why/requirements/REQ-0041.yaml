@@ -1,0 +1,11 @@
+id: REQ-0041
+name: Completed Rule Sets by Repository
+description: >-
+  The ledger must return the completed Rule Sets grouped by repository, using
+  the same completeness as the per-set read. Each entry must include the bound
+  set identity, version and display name. The read must omit repositories with
+  no completed set.
+rationale: >-
+  The dashboard can look up and display completed Rule Sets for each repository.
+decisions:
+  - why:DEC-0019
