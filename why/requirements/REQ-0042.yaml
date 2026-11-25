@@ -1,0 +1,11 @@
+id: REQ-0042
+name: Bound Rule Sets on Attestation Reads
+description: >-
+  The attestation detail read must return the stored Rule Set bindings in their
+  reported order, including each binding's source, path, ID, version and
+  execution points. It must include bindings for unregistered versions and
+  return an empty array when no bindings are stored.
+rationale: >-
+  Consumers need the Rule Sets bound in the run to group the reported results.
+decisions:
+  - why:DEC-0018

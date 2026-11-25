@@ -1,10 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Attestation",
-  "description": "One stored attestation: the fields of its summary and its results.",
+  "description": "One stored attestation with its summary fields, bound Rule Sets and results.",
   "type": "object",
   "required": [
-    "results"
+    "results",
+    "rule_sets"
   ],
   "allOf": [
     {
@@ -76,6 +77,25 @@
     }
   },
   "properties": {
+    "rule_sets": {
+      "type": "array",
+      "description": "Stored Rule Set bindings in reported order, or an empty array when none were stored.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "path", "id", "version", "execution_points"],
+        "properties": {
+          "source": { "type": "string" },
+          "path": { "type": "string" },
+          "id": { "type": "string", "description": "The Rule Set's local ID." },
+          "version": { "type": "string" },
+          "execution_points": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
     "results": {
       "type": "array",
       "items": {

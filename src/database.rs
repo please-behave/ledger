@@ -9,7 +9,7 @@ use serde_json::value::RawValue;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::types::Json;
-use sqlx::{AssertSqlSafe, FromRow, PgPool};
+use sqlx::{AssertSqlSafe, FromRow, PgPool, Row};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -620,11 +620,12 @@ enum UnverifiedReason {
 pub struct StoredAttestation {
     #[serde(flatten)]
     summary: Summary,
+    rule_sets: Value,
     results: Vec<ResultRow>,
 }
 
 macro_rules! summary_query {
-    ($source:literal) => {
+    ($source:literal $(, $extra_columns:literal)?) => {
         concat!(
             "select a.id::text as id, \
              to_char(a.received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') as received_at, \
@@ -634,8 +635,9 @@ macro_rules! summary_query {
              (select count(*) from attestation_results r \
               where r.attestation_id = a.id and r.status = 'NOT_RUN') as not_run_count, \
              (select count(*) from attestation_results r \
-              where r.attestation_id = a.id) as result_count \
-             from ",
+              where r.attestation_id = a.id) as result_count",
+            $($extra_columns,)?
+            " from ",
             $source
         )
     };
@@ -671,13 +673,18 @@ pub async fn attestation(
     pool: &PgPool,
     id: Uuid,
 ) -> Result<Option<StoredAttestation>, sqlx::Error> {
-    let summary: Option<Summary> = sqlx::query_as(summary_query!("attestations a where a.id = $1"))
-        .bind(id)
-        .fetch_optional(pool)
-        .await?;
-    let Some(summary) = summary else {
+    let attestation = sqlx::query(summary_query!(
+        "attestations a where a.id = $1",
+        ", a.rule_sets"
+    ))
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    let Some(attestation) = attestation else {
         return Ok(None);
     };
+    let summary = Summary::from_row(&attestation)?;
+    let rule_sets = attestation.try_get("rule_sets")?;
     let rows = sqlx::query_as(
         "select r.rule_id, r.kind, r.status, registration.name, r.rule_digest = registration.digest, \
                 r.rule_source, r.rule_path, r.rule_local_id, r.rule_version \
@@ -715,5 +722,9 @@ pub async fn attestation(
             },
         )
         .collect();
-    Ok(Some(StoredAttestation { summary, results }))
+    Ok(Some(StoredAttestation {
+        summary,
+        rule_sets,
+        results,
+    }))
 }

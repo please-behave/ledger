@@ -368,6 +368,41 @@ async fn counts_and_results_follow_the_stored_attestation() {
     assert_eq!(attestation["results"][0]["kind"], "check");
 }
 
+// REQ-0042: the detail read returns reported bindings, or an empty array without them.
+#[tokio::test(flavor = "multi_thread")]
+async fn attestation_detail_returns_the_stored_rule_set_bindings() {
+    let postgres = postgres().await;
+    let address = start_service(migrated_pool(&postgres).await).await;
+    let points = ["check", "pre-push", "ci"];
+    let baseline = set_binding("baseline", "2.0", &["pre-push", "check"]);
+    let mut older = set_binding("baseline", "1.0", &["ci"]);
+    older["path"] = json!("bundles/baseline");
+    let bindings = json!([baseline, older, baseline]);
+    let mut bound = envelope("bound", &points, COMMIT, &["PASS"]);
+    bound["attestation"]["rule_sets"] = bindings.clone();
+    let unbound = envelope("unbound", &points, COMMIT, &["PASS"]);
+    let schema: Value = serde_json::from_str(include_str!(
+        "../why/contracts/read/attestation.schema.json"
+    ))
+    .unwrap();
+    let validator = jsonschema::draft202012::new(&schema).unwrap();
+
+    for (report, expected) in [(bound, bindings), (unbound, json!([]))] {
+        let id = ingest(address, report).await;
+        let (status, attestation) = read_json(address, format!("/v0/attestations/{id}")).await;
+        assert_eq!(status, 200);
+        assert_eq!(attestation["rule_sets"], expected);
+        validator.validate(&attestation).unwrap();
+    }
+
+    assert!(
+        latest(address)
+            .await
+            .iter()
+            .all(|summary| summary.get("rule_sets").is_none())
+    );
+}
+
 // REQ-0032: the detail read returns stored identities with optional versions.
 #[tokio::test(flavor = "multi_thread")]
 async fn results_return_the_stored_rule_identity_when_present() {
