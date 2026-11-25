@@ -93,6 +93,7 @@ async fn migrate_creates_the_schema_and_is_idempotent() {
     assert!(exists(&pool, "attestation_results").await);
     assert!(exists(&pool, "rule_registrations").await);
     assert!(exists(&pool, "rule_set_registrations").await);
+    assert!(exists(&pool, "release_facts").await);
     for index in [
         "attestations_latest_idx",
         "attestations_repository_commit_idx",
@@ -391,6 +392,94 @@ async fn rule_set_binding_migration_preserves_attestations_and_legacy_inserts() 
     .await
     .expect("store a binding for an unregistered set");
     assert_eq!(stored, bindings);
+}
+
+#[tokio::test]
+async fn release_fact_migration_preserves_attestations_and_keys_releases_by_repository() {
+    const MIGRATIONS: Migrator = sqlx::migrate!();
+    const PRE_RELEASE_FACT_SCHEMA: i64 = 20261125000001;
+    const REPOSITORY: &str = "example.com/owner/project";
+    const VERSION: &str = "November release";
+    const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
+    const OTHER_COMMIT: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    let database = postgres().await;
+    let pool = ledger::database::connect(&database.url)
+        .await
+        .expect("connect");
+    MIGRATIONS
+        .run_to(PRE_RELEASE_FACT_SCHEMA, &pool)
+        .await
+        .expect("apply the preceding schema");
+    insert_attestation(&pool, &[])
+        .await
+        .expect("insert an existing attestation");
+    assert!(!exists(&pool, "release_facts").await);
+
+    ledger::database::migrate(&pool)
+        .await
+        .expect("add release fact storage");
+    insert_attestation(&pool, &[("id", OTHER_ID)])
+        .await
+        .expect("insert an attestation through the old columns");
+
+    let insert_release = |repository: &str, version: &str, commit: &str, sender, method| {
+        sqlx::query(
+            "insert into release_facts (repository, version, commit_sha, sender, auth_method) \
+             values ($1, $2, $3, $4, $5)",
+        )
+        .bind(repository.to_owned())
+        .bind(version.to_owned())
+        .bind(commit.to_owned())
+        .bind(sender)
+        .bind(method)
+        .execute(&pool)
+    };
+    insert_release(REPOSITORY, VERSION, COMMIT, "ci", "api_key")
+        .await
+        .expect("store a release without an attestation");
+    insert_release(
+        "github.com/owner/project",
+        VERSION,
+        OTHER_COMMIT,
+        "github.com/owner/project",
+        "github_oidc",
+    )
+    .await
+    .expect("store the same version for another repository with a SHA-256 commit");
+    let duplicate = insert_release(REPOSITORY, VERSION, OTHER_COMMIT, "other", "api_key")
+        .await
+        .expect_err("the repository and version identify one record");
+    assert!(matches!(duplicate, sqlx::Error::Database(error) if error.is_unique_violation()));
+
+    let long_version = "x".repeat(257);
+    for (version, commit, method) in [
+        ("", COMMIT, "api_key"),
+        (&long_version, COMMIT, "api_key"),
+        ("short commit", "0123456", "api_key"),
+        ("unknown method", COMMIT, "unknown"),
+    ] {
+        let invalid = insert_release(REPOSITORY, version, commit, "ci", method)
+            .await
+            .expect_err("invalid release facts violate a constraint");
+        assert!(matches!(invalid, sqlx::Error::Database(error) if error.is_check_violation()));
+    }
+
+    let stored: (String, String, String, bool) = sqlx::query_as(
+        "select commit_sha, sender, auth_method, received_at is not null \
+         from release_facts where repository = $1 and version = $2",
+    )
+    .bind(REPOSITORY)
+    .bind(VERSION)
+    .fetch_one(&pool)
+    .await
+    .expect("read the first release");
+    assert_eq!(stored, (COMMIT.into(), "ci".into(), "api_key".into(), true));
+    let attestation_count: i64 = sqlx::query_scalar("select count(*) from attestations")
+        .fetch_one(&pool)
+        .await
+        .expect("count attestations after storing the release facts");
+    assert_eq!(attestation_count, 2);
 }
 
 #[tokio::test]
