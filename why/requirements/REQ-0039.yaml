@@ -1,0 +1,14 @@
+id: REQ-0039
+name: Registered Rule Set Version History
+description: >-
+  The ledger must return every registered version of a Rule Set identified by
+  source, path and ID in ascending numeric version order. Each version carries
+  its registered name, description, knowledge document and member list, with
+  its digest, registering commit and time. The ledger must preserve stored
+  texts, leave registrations unchanged and return not found for an unknown
+  identity.
+rationale: >-
+  The cockpit can display the registered content and provenance of any Rule Set version.
+decisions:
+  - why:DEC-0016
+  - why:DEC-0017

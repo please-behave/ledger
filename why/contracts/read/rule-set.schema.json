@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Registered Rule Set versions",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["source", "path", "id", "version", "members", "digest", "commit", "registered_at"],
+    "properties": {
+      "source": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/source" },
+      "path": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/path" },
+      "id": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/id" },
+      "version": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/version" },
+      "name": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/set/properties/name" },
+      "description": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/set/properties/description" },
+      "knowledge": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/knowledge" },
+      "members": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/set/properties/members" },
+      "digest": { "$ref": "rule.schema.json#/items/properties/digest" },
+      "commit": { "$ref": "rule.schema.json#/items/properties/commit" },
+      "registered_at": { "$ref": "rule.schema.json#/items/properties/registered_at" }
+    }
+  }
+}

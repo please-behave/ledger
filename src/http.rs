@@ -27,6 +27,8 @@ pub fn router(pool: PgPool) -> Router {
         .route("/v0/attestations/{id}", get(read))
         .route("/v0/rules", get(rules))
         .route("/v0/rules/detail", get(rule_detail))
+        .route("/v0/rule-sets", get(rule_sets))
+        .route("/v0/rule-sets/detail", get(rule_set_detail))
         .route(
             "/v0/rule-registrations",
             post(register).layer(DefaultBodyLimit::max(MAX_REGISTRATION_BODY_BYTES)),
@@ -183,20 +185,20 @@ fn page_limit(limit: Option<i64>) -> Result<i64, StatusCode> {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RulePage {
+struct RegistryPage {
     limit: Option<i64>,
     before: Option<String>,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RuleIdentity {
+struct RegistryIdentity {
     source: String,
     path: String,
     id: String,
 }
 
-impl RuleIdentity {
+impl RegistryIdentity {
     fn parts(&self) -> Result<(&str, &str, &str), StatusCode> {
         valid_rule_identity(&self.source, &self.path, &self.id)
             .then_some((self.source.as_str(), self.path.as_str(), self.id.as_str()))
@@ -204,40 +206,67 @@ impl RuleIdentity {
     }
 }
 
+impl RegistryPage {
+    fn parameters(self) -> Result<(Option<database::RegistryCursor>, i64), StatusCode> {
+        let limit = page_limit(self.limit)?;
+        let before = self
+            .before
+            .as_deref()
+            .map(serde_json::from_str::<JsonObject<database::RegistryCursor>>)
+            .transpose()
+            .map_err(|_| StatusCode::BAD_REQUEST)?
+            .map(|JsonObject(cursor)| cursor);
+        if before.as_ref().is_some_and(|cursor| {
+            !valid_rule_identity(&cursor.source, &cursor.path, &cursor.id)
+                || !valid_version(&cursor.version)
+                || cursor.scan.registrations < 1
+        }) {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        Ok((before, limit))
+    }
+}
+
 async fn rules(
     State(pool): State<PgPool>,
-    Query(page): Query<RulePage>,
-) -> Result<Json<Vec<database::ListedRule>>, StatusCode> {
-    let limit = page_limit(page.limit)?;
-    let before = page
-        .before
-        .as_deref()
-        .map(serde_json::from_str::<JsonObject<database::RuleCursor>>)
-        .transpose()
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
-    let before = before.as_ref().map(|JsonObject(cursor)| cursor);
-    if before.is_some_and(|cursor| {
-        !valid_rule_identity(&cursor.source, &cursor.path, &cursor.id)
-            || !valid_version(&cursor.version)
-            || cursor.scan.registrations < 1
-    }) {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-    database::registered_rules(&pool, before, limit)
-        .await
-        .map_err(|error| read_failure(&error))?
+    Query(page): Query<RegistryPage>,
+) -> Result<Json<Vec<database::RegistryEntry<database::RuleSummary>>>, StatusCode> {
+    let (before, limit) = page.parameters()?;
+    registry_page(database::registered_rules(&pool, before.as_ref(), limit).await)
+}
+
+async fn rule_sets(
+    State(pool): State<PgPool>,
+    Query(page): Query<RegistryPage>,
+) -> Result<Json<Vec<database::RegistryEntry<database::RuleSetSummary>>>, StatusCode> {
+    let (before, limit) = page.parameters()?;
+    registry_page(database::registered_sets(&pool, before.as_ref(), limit).await)
+}
+
+fn registry_page<T>(page: Result<Option<Vec<T>>, sqlx::Error>) -> Result<Json<Vec<T>>, StatusCode> {
+    page.map_err(|error| read_failure(&error))?
         .map(Json)
         .ok_or(StatusCode::BAD_REQUEST)
 }
 
 async fn rule_detail(
     State(pool): State<PgPool>,
-    Query(identity): Query<RuleIdentity>,
+    Query(identity): Query<RegistryIdentity>,
 ) -> Result<Json<Vec<database::RuleVersion>>, StatusCode> {
     let (source, path, id) = identity.parts()?;
-    let versions = database::registered_rule_versions(&pool, source, path, id)
-        .await
-        .map_err(|error| read_failure(&error))?;
+    version_history(database::registered_rule_versions(&pool, source, path, id).await)
+}
+
+async fn rule_set_detail(
+    State(pool): State<PgPool>,
+    Query(identity): Query<RegistryIdentity>,
+) -> Result<Json<Vec<database::RuleSetVersion>>, StatusCode> {
+    let (source, path, id) = identity.parts()?;
+    version_history(database::registered_set_versions(&pool, source, path, id).await)
+}
+
+fn version_history<T>(versions: Result<Vec<T>, sqlx::Error>) -> Result<Json<Vec<T>>, StatusCode> {
+    let versions = versions.map_err(|error| read_failure(&error))?;
     if versions.is_empty() {
         return Err(StatusCode::NOT_FOUND);
     }

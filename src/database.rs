@@ -9,7 +9,7 @@ use serde_json::value::RawValue;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::types::Json;
-use sqlx::{FromRow, PgPool};
+use sqlx::{AssertSqlSafe, FromRow, PgPool};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -263,33 +263,96 @@ pub(crate) struct RuleVersion {
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct RuleScan {
+pub(crate) struct RegistryScan {
     through: i64,
     pub registrations: i64,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct RuleCursor {
+pub(crate) struct RegistryCursor {
     pub source: String,
     pub path: String,
     pub id: String,
     pub version: String,
-    pub scan: RuleScan,
+    pub scan: RegistryScan,
 }
 
 #[derive(Serialize)]
-pub(crate) struct ListedRule {
+pub(crate) struct RegistryEntry<T> {
     #[serde(flatten)]
-    summary: RuleSummary,
-    scan: RuleScan,
+    summary: T,
+    scan: RegistryScan,
+}
+
+#[derive(Serialize, FromRow)]
+pub(crate) struct RuleSetSummary {
+    source: String,
+    path: String,
+    id: String,
+    version: String,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    member_count: i32,
+}
+
+#[derive(Serialize, FromRow)]
+pub(crate) struct RuleSetVersion {
+    source: String,
+    path: String,
+    id: String,
+    version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    knowledge: Option<Json<Box<RawValue>>>,
+    members: Json<Box<RawValue>>,
+    digest: String,
+    commit: String,
+    registered_at: String,
+}
+
+enum Registry {
+    Rules,
+    RuleSets,
 }
 
 pub(crate) async fn registered_rules(
     pool: &PgPool,
-    before: Option<&RuleCursor>,
+    before: Option<&RegistryCursor>,
     limit: i64,
-) -> Result<Option<Vec<ListedRule>>, sqlx::Error> {
+) -> Result<Option<Vec<RegistryEntry<RuleSummary>>>, sqlx::Error> {
+    registry_page(pool, before, limit, Registry::Rules).await
+}
+
+pub(crate) async fn registered_sets(
+    pool: &PgPool,
+    before: Option<&RegistryCursor>,
+    limit: i64,
+) -> Result<Option<Vec<RegistryEntry<RuleSetSummary>>>, sqlx::Error> {
+    registry_page(pool, before, limit, Registry::RuleSets).await
+}
+
+async fn registry_page<T>(
+    pool: &PgPool,
+    before: Option<&RegistryCursor>,
+    limit: i64,
+    registry: Registry,
+) -> Result<Option<Vec<RegistryEntry<T>>>, sqlx::Error>
+where
+    T: for<'row> FromRow<'row, sqlx::postgres::PgRow> + Send + Unpin,
+{
+    // Only these fixed SQL fragments vary. Every request value is bound.
+    let (table, fields) = match registry {
+        Registry::Rules => ("rule_registrations", "kind, name, sender as owner"),
+        Registry::RuleSets => (
+            "rule_set_registrations",
+            "coalesce(name, id) as name, json_array_length(members) as member_count",
+        ),
+    };
     let mut transaction = pool.begin().await?;
     sqlx::query("set transaction isolation level repeatable read read only")
         .execute(&mut *transaction)
@@ -297,23 +360,25 @@ pub(crate) async fn registered_rules(
 
     // A scan uses an append-only prefix of the registrations. Its count
     // detects a late commit whose registration time falls inside the prefix.
-    let (through, registrations, anchor): (Option<i64>, i64, Option<String>) = sqlx::query_as(
+    let scan_query = format!(
         "select (extract(epoch from max(registered_at)) * 1000000)::bigint, count(*), \
                 (select case when version = $5 then coalesce(name, id) end \
-                 from rule_registrations where source = $2 and path = $3 and id = $4 \
+                 from {table} where source = $2 and path = $3 and id = $4 \
                    and extract(epoch from registered_at) * 1000000 <= $1::bigint \
                  order by split_part(version, '.', 1)::numeric desc, \
                           split_part(version, '.', 2)::numeric desc limit 1) \
-         from rule_registrations \
+         from {table} \
          where $1::bigint is null or extract(epoch from registered_at) * 1000000 <= $1",
-    )
-    .bind(before.map(|cursor| cursor.scan.through))
-    .bind(before.map(|cursor| &cursor.source))
-    .bind(before.map(|cursor| &cursor.path))
-    .bind(before.map(|cursor| &cursor.id))
-    .bind(before.map(|cursor| &cursor.version))
-    .fetch_one(&mut *transaction)
-    .await?;
+    );
+    let (through, registrations, anchor): (Option<i64>, i64, Option<String>) =
+        sqlx::query_as(AssertSqlSafe(scan_query))
+            .bind(before.map(|cursor| cursor.scan.through))
+            .bind(before.map(|cursor| &cursor.source))
+            .bind(before.map(|cursor| &cursor.path))
+            .bind(before.map(|cursor| &cursor.id))
+            .bind(before.map(|cursor| &cursor.version))
+            .fetch_one(&mut *transaction)
+            .await?;
     if before.is_some_and(|cursor| {
         through != Some(cursor.scan.through)
             || registrations != cursor.scan.registrations
@@ -324,23 +389,23 @@ pub(crate) async fn registered_rules(
     let Some(through) = through else {
         return Ok(Some(Vec::new()));
     };
-    let scan = RuleScan {
+    let scan = RegistryScan {
         through,
         registrations,
     };
 
-    let summaries = sqlx::query_as(
+    let page_query = format!(
         r#"with greatest as (
                select distinct on (source, path, id)
-                      source, path, id, version, kind, name, description, sender as owner,
+                      source, path, id, version, description, {fields},
                       lower(coalesce(name, id) collate pg_catalog."pg_c_utf8") as sort_name
-               from rule_registrations
+               from {table}
                where extract(epoch from registered_at) * 1000000 <= $1::bigint
                order by source, path, id,
                         split_part(version, '.', 1)::numeric desc,
                         split_part(version, '.', 2)::numeric desc
            )
-           select source, path, id, version, kind, name, description, owner
+           select *
            from greatest
            where $2::text is null
               or (sort_name, source collate pg_catalog."C", path collate pg_catalog."C",
@@ -349,20 +414,21 @@ pub(crate) async fn registered_rules(
            order by sort_name, source collate pg_catalog."C", path collate pg_catalog."C",
                     id collate pg_catalog."C"
            limit $6"#,
-    )
-    .bind(through)
-    .bind(anchor)
-    .bind(before.map(|cursor| &cursor.source))
-    .bind(before.map(|cursor| &cursor.path))
-    .bind(before.map(|cursor| &cursor.id))
-    .bind(limit)
-    .fetch_all(&mut *transaction)
-    .await?;
+    );
+    let summaries = sqlx::query_as(AssertSqlSafe(page_query))
+        .bind(through)
+        .bind(anchor)
+        .bind(before.map(|cursor| &cursor.source))
+        .bind(before.map(|cursor| &cursor.path))
+        .bind(before.map(|cursor| &cursor.id))
+        .bind(limit)
+        .fetch_all(&mut *transaction)
+        .await?;
     transaction.commit().await?;
     Ok(Some(
         summaries
             .into_iter()
-            .map(|summary| ListedRule { summary, scan })
+            .map(|summary| RegistryEntry { summary, scan })
             .collect(),
     ))
 }
@@ -379,6 +445,26 @@ pub(crate) async fn registered_rule_versions(
                 to_char(registered_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') as registered_at \
          from rule_registrations where source = $1 and path = $2 and id = $3 \
          order by split_part(version, '.', 1)::numeric, split_part(version, '.', 2)::numeric",
+    )
+    .bind(source)
+    .bind(path)
+    .bind(id)
+    .fetch_all(pool)
+    .await
+}
+
+pub(crate) async fn registered_set_versions(
+    pool: &PgPool,
+    source: &str,
+    path: &str,
+    id: &str,
+) -> Result<Vec<RuleSetVersion>, sqlx::Error> {
+    sqlx::query_as(
+        r#"select source, path, id, version, name, description, knowledge, members,
+                  digest, commit_sha as commit,
+                  to_char(registered_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as registered_at
+           from rule_set_registrations where source = $1 and path = $2 and id = $3
+           order by split_part(version, '.', 1)::numeric, split_part(version, '.', 2)::numeric"#,
     )
     .bind(source)
     .bind(path)

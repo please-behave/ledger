@@ -46,3 +46,15 @@ contracts:
     schema: rule.schema.json
     requirements:
       - REQ-0030
+  - id: CON-0011
+    name: Registered Rule Sets
+    document: rule-sets.md
+    schema: rule-sets.schema.json
+    requirements:
+      - REQ-0038
+  - id: CON-0012
+    name: Registered Rule Set Versions
+    document: rule-set.md
+    schema: rule-set.schema.json
+    requirements:
+      - REQ-0039

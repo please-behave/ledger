@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Registered Rule Sets",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["source", "path", "id", "version", "name", "member_count", "scan"],
+    "properties": {
+      "source": { "$ref": "rules.schema.json#/$defs/summary/properties/source" },
+      "path": { "$ref": "rules.schema.json#/$defs/summary/properties/path" },
+      "id": { "$ref": "rules.schema.json#/$defs/summary/properties/id" },
+      "version": { "$ref": "rules.schema.json#/$defs/summary/properties/version" },
+      "name": { "type": "string" },
+      "description": { "type": "string" },
+      "member_count": { "type": "integer", "minimum": 0 },
+      "scan": { "$ref": "rules.schema.json#/$defs/scan" }
+    }
+  },
+  "$defs": {
+    "cursor": { "$ref": "rules.schema.json#/$defs/cursor" }
+  }
+}

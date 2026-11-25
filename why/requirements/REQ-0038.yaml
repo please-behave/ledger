@@ -1,0 +1,14 @@
+id: REQ-0038
+name: Paged Registered Rule Sets
+description: >-
+  The ledger must provide a paged read of registered Rule Sets that returns each
+  source, path and ID once, with the numerically greatest registered version,
+  its display name, optional description and member count. The display name
+  falls back to the local ID when the version has no name. The read uses the
+  registered rule ordering and continuation conventions, preserves stored
+  texts and leaves registrations unchanged.
+rationale: >-
+  The cockpit can browse Rule Sets without reading every version.
+decisions:
+  - why:DEC-0016
+  - why:DEC-0017

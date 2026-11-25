@@ -69,12 +69,16 @@ fn rule_cursor(summary: &Value) -> Value {
 }
 
 fn rules_after(cursor: &Value, limit: usize) -> String {
+    registry_after("/v0/rules", cursor, limit)
+}
+
+fn registry_after(route: &str, cursor: &Value, limit: usize) -> String {
     let encoded: String = cursor
         .to_string()
         .bytes()
         .map(|byte| format!("%{byte:02X}"))
         .collect();
-    format!("/v0/rules?limit={limit}&before={encoded}")
+    format!("{route}?limit={limit}&before={encoded}")
 }
 
 async fn rules_page(address: SocketAddr, path: &str) -> Vec<Value> {
@@ -666,6 +670,127 @@ async fn set_registrations_preserve_the_original_and_store_new_versions() {
             .await
             .expect("the second version exists");
     assert_eq!(receipts[2]["digest"], new_digest);
+}
+
+// REQ-0038, REQ-0039
+#[tokio::test(flavor = "multi_thread")]
+async fn reads_paged_rule_sets_and_full_version_histories() {
+    const LIST: &str = "/v0/rule-sets";
+    const DETAIL: &str =
+        "/v0/rule-sets/detail?source=github.com%2Fexample%2Fsets&path=quality%2Fone%20%26%20two%2B";
+    let database = postgres().await;
+    let pool = migrated_pool(&database).await;
+    let address = start_service(pool).await;
+    assert!(rules_page(address, LIST).await.is_empty());
+    outcomes(address, batch("ci", COMMIT, vectors()[0].input.get())).await;
+
+    let mut latest = rule_set(json!([set_member()]));
+    latest["path"] = json!("quality/one & two+");
+    latest["version"] = json!("10.0");
+    latest["name"] = json!("<b>Baseline</b>");
+    latest["description"] = json!("  Text & markup.\r\nSecond line.");
+    latest["knowledge"] = json!({
+        "purpose": "Text & markup.\r\nSecond line.",
+        "audience": "Repository owners",
+        "commonality": "Formatting",
+        "rules": [{"rule": "format", "role": "Check format."}],
+        "admission": ["Formatting rules."],
+        "execution_points": "Check"
+    });
+    let mut older = latest.clone();
+    older["version"] = json!("2.10");
+    older.as_object_mut().unwrap().remove("name");
+    older.as_object_mut().unwrap().remove("description");
+    older.as_object_mut().unwrap().remove("knowledge");
+    older["members"][0]["enabled"] = json!(true);
+    let mut oldest = older.clone();
+    oldest["version"] = json!("2.2");
+    oldest["members"] = json!([]);
+    let mut other = rule_set(json!([]));
+    other["id"] = json!("other");
+
+    let sets = vec![latest.clone(), older.clone(), oldest.clone(), other];
+    let receipts = set_outcomes(address, set_batch(sets)).await;
+    assert!(
+        receipts
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["outcome"] == "created")
+    );
+    let page = rules_page(address, "/v0/rule-sets?limit=1").await;
+    assert_eq!(
+        page,
+        [json!({
+            "source": latest["source"], "path": latest["path"], "id": latest["id"],
+            "version": "10.0", "name": latest["name"], "description": latest["description"],
+            "member_count": 1, "scan": page[0]["scan"],
+        })]
+    );
+    let scan = &page[0]["scan"];
+    assert_eq!(scan["registrations"], 4);
+
+    let (status, body) = read_registry(address, &format!("{DETAIL}&id=baseline")).await;
+    assert_eq!(status, 200, "{body}");
+    let mut history: Vec<Value> = serde_json::from_str(&body).unwrap();
+    for version in &mut history {
+        let time = version
+            .as_object_mut()
+            .unwrap()
+            .remove("registered_at")
+            .unwrap();
+        assert!(time.as_str().unwrap().ends_with('Z'));
+    }
+    let expected = [oldest, older, latest.clone()]
+        .into_iter()
+        .zip([2, 1, 0])
+        .map(|(mut set, index)| {
+            set["digest"] = receipts[index]["digest"].clone();
+            set["commit"] = json!(COMMIT);
+            set
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(history, expected);
+
+    latest["version"] = json!("10.1");
+    latest["name"] = json!("Z renamed");
+    let mut request = set_batch(vec![latest]);
+    request["commit"] = json!(RETRY_COMMIT);
+    assert_eq!(
+        set_outcomes(address, request).await[0]["outcome"],
+        "created"
+    );
+
+    let continuation = registry_after(LIST, &rule_cursor(&page[0]), 2);
+    assert_eq!(
+        rules_page(address, &continuation).await,
+        [json!({
+            "source": "github.com/example/sets", "path": ".", "id": "other",
+            "version": "1.0", "name": "other", "member_count": 0, "scan": scan,
+        })]
+    );
+    let fresh_page = rules_page(address, LIST).await;
+    assert_eq!(fresh_page.len(), 2);
+    assert_eq!(fresh_page[1]["version"], "10.1");
+    assert_eq!(fresh_page[1]["name"], "Z renamed");
+
+    let mut stale_anchor = rule_cursor(&page[0]);
+    stale_anchor["version"] = json!("2.10");
+    let bad_cursor = registry_after(LIST, &stale_anchor, 2);
+    for path in [
+        bad_cursor.as_str(),
+        "/v0/rule-sets?limit=201",
+        "/v0/rule-sets?limit=1&limit=2",
+        DETAIL,
+    ] {
+        assert_eq!(read_registry(address, path).await.0, 400, "{path}");
+    }
+    assert_eq!(
+        read_registry(address, &format!("{DETAIL}&id=missing"))
+            .await
+            .0,
+        404
+    );
 }
 
 // REQ-0035
