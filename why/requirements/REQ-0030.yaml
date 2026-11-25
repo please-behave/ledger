@@ -5,6 +5,10 @@ description: >-
   source, path and ID in ascending numeric version order, with the complete
   registered content, digest, registering commit, time and owner. The owner
   is the sender stored for that version's first registration, as received.
+  Each rule version must list the identity, version and display name of every
+  registered Rule Set version that contains it, including disabled members.
+  The display name falls back to the set ID when absent. If no set version
+  matches, the list must be empty.
   The ledger must preserve stored texts, leave registrations unchanged and
   return not found for an unknown identity.
 rationale: >-
@@ -16,3 +20,5 @@ decisions:
   - why:DEC-0011
   - why:DEC-0012
   - why:DEC-0014
+  - why:DEC-0016
+  - why:DEC-0017

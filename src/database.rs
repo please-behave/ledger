@@ -239,6 +239,7 @@ pub(crate) struct RuleSummary {
     version: String,
     kind: String,
     owner: String,
+    rule_sets: Json<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -320,6 +321,37 @@ enum Registry {
     RuleSets,
 }
 
+// Both reads match the full rule version key against the registered member list.
+// The caller selects which Rule Set versions and rule rows participate.
+const READ_RULE_MEMBERSHIPS: &str = r#",
+    memberships as (
+        select rule.source, rule.path, rule.id, rule.version,
+               json_agg(json_build_object(
+                   'source', sets.source, 'path', sets.path, 'id', sets.id,
+                   'version', sets.version, 'name', coalesce(sets.name, sets.id)
+               ) order by sets.source collate pg_catalog."C", sets.path collate pg_catalog."C",
+                          sets.id collate pg_catalog."C", split_part(sets.version, '.', 1)::numeric,
+                          split_part(sets.version, '.', 2)::numeric) as rule_sets
+        from set_versions sets
+        cross join lateral json_to_recordset(sets.members)
+            as member(source text, path text, id text, version text)
+        join selected_rules rule on (member.source, member.path, member.id, member.version)
+                                  = (rule.source, rule.path, rule.id, rule.version)
+        group by rule.source, rule.path, rule.id, rule.version
+    )
+    select selected_rules.*, coalesce(memberships.rule_sets, '[]'::json) as rule_sets
+    from selected_rules left join memberships using (source, path, id, version)
+"#;
+
+const GREATEST_SET_VERSIONS: &str = r#",
+    set_versions as (
+        select distinct on (source, path, id) source, path, id, version, name, members
+        from rule_set_registrations
+        order by source, path, id, split_part(version, '.', 1)::numeric desc,
+                 split_part(version, '.', 2)::numeric desc
+    )
+"#;
+
 pub(crate) async fn registered_rules(
     pool: &PgPool,
     before: Option<&RegistryCursor>,
@@ -394,6 +426,10 @@ where
         registrations,
     };
 
+    let (set_versions, select_page) = match registry {
+        Registry::Rules => (GREATEST_SET_VERSIONS, READ_RULE_MEMBERSHIPS),
+        Registry::RuleSets => ("", "select selected_rules.* from selected_rules"),
+    };
     let page_query = format!(
         r#"with greatest as (
                select distinct on (source, path, id)
@@ -404,16 +440,20 @@ where
                order by source, path, id,
                         split_part(version, '.', 1)::numeric desc,
                         split_part(version, '.', 2)::numeric desc
-           )
-           select *
-           from greatest
-           where $2::text is null
-              or (sort_name, source collate pg_catalog."C", path collate pg_catalog."C",
-                  id collate pg_catalog."C")
-               > (lower($2 collate pg_catalog."pg_c_utf8"), $3, $4, $5)
-           order by sort_name, source collate pg_catalog."C", path collate pg_catalog."C",
-                    id collate pg_catalog."C"
-           limit $6"#,
+           ), selected_rules as (
+               select *
+               from greatest
+               where $2::text is null
+                  or (sort_name, source collate pg_catalog."C", path collate pg_catalog."C",
+                      id collate pg_catalog."C")
+                   > (lower($2 collate pg_catalog."pg_c_utf8"), $3, $4, $5)
+               order by sort_name, source collate pg_catalog."C", path collate pg_catalog."C",
+                        id collate pg_catalog."C"
+               limit $6
+           ){set_versions}
+           {select_page}
+           order by sort_name, selected_rules.source collate pg_catalog."C",
+                    selected_rules.path collate pg_catalog."C", selected_rules.id collate pg_catalog."C""#,
     );
     let summaries = sqlx::query_as(AssertSqlSafe(page_query))
         .bind(through)
@@ -439,18 +479,25 @@ pub(crate) async fn registered_rule_versions(
     path: &str,
     id: &str,
 ) -> Result<Vec<RuleVersion>, sqlx::Error> {
-    sqlx::query_as(
-        "select source, path, id, version, kind, name, description, blocking, prompt, knowledge, \
-                sender as owner, digest, commit_sha as commit, \
-                to_char(registered_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') as registered_at \
-         from rule_registrations where source = $1 and path = $2 and id = $3 \
-         order by split_part(version, '.', 1)::numeric, split_part(version, '.', 2)::numeric",
-    )
-    .bind(source)
-    .bind(path)
-    .bind(id)
-    .fetch_all(pool)
-    .await
+    let query = format!(
+        r#"with selected_rules as (
+               select source, path, id, version, kind, name, description, blocking, prompt, knowledge,
+                      sender as owner, digest, commit_sha as commit,
+                      to_char(registered_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as registered_at
+               from rule_registrations where source = $1 and path = $2 and id = $3
+           ), set_versions as (
+               select source, path, id, version, name, members from rule_set_registrations
+           )
+           {READ_RULE_MEMBERSHIPS}
+           order by split_part(selected_rules.version, '.', 1)::numeric,
+                    split_part(selected_rules.version, '.', 2)::numeric"#,
+    );
+    sqlx::query_as(AssertSqlSafe(query))
+        .bind(source)
+        .bind(path)
+        .bind(id)
+        .fetch_all(pool)
+        .await
 }
 
 pub(crate) async fn registered_set_versions(

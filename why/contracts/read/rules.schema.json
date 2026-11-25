@@ -34,7 +34,7 @@
     },
     "summary": {
       "type": "object",
-      "required": ["source", "path", "id", "version", "kind", "owner"],
+      "required": ["source", "path", "id", "version", "kind", "owner", "rule_sets"],
       "properties": {
         "source": { "type": "string", "minLength": 1, "maxLength": 256 },
         "path": { "type": "string", "minLength": 1, "maxLength": 256 },
@@ -47,7 +47,23 @@
         "kind": { "enum": ["check", "review"] },
         "owner": { "type": "string", "minLength": 1 },
         "name": { "type": "string" },
-        "description": { "type": "string" }
+        "description": { "type": "string" },
+        "rule_sets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ruleSetMembership" }
+        }
+      }
+    },
+    "ruleSetMembership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "path", "id", "version", "name"],
+      "properties": {
+        "source": { "$ref": "#/$defs/summary/properties/source" },
+        "path": { "$ref": "#/$defs/summary/properties/path" },
+        "id": { "$ref": "#/$defs/summary/properties/id" },
+        "version": { "$ref": "#/$defs/summary/properties/version" },
+        "name": { "type": "string" }
       }
     }
   }

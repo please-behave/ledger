@@ -13,6 +13,15 @@ simple lowercase mapping. It breaks ties by source, path and ID in ascending
 code point order, comparing those fields as stored. An empty page returns an
 empty array.
 
+Each summary's `rule_sets` array lists the Rule Set identities whose
+numerically greatest registered version contains the exact rule version in
+the summary. The ledger selects those Rule Set versions from the
+registrations visible when it reads the page. Each entry contains the set's
+`source`, `path`, `id`, `version` and display `name`, which falls back to
+the set ID when absent. Entries are ordered by source, path and ID in
+ascending code point order. A rule with no matching Rule Set has an empty
+array. Membership includes rules registered as disabled in a set.
+
 | Query parameter | Meaning |
 | --- | --- |
 | `limit` | The maximum number of summaries, an integer from 1 to 200. Defaults to 100. |
@@ -36,5 +45,6 @@ The read changes nothing. The ledger returns texts as stored. Consumers must
 treat them as untrusted data and escape them for the display context. For all
 versions of one identity, see [Registered rule versions](rule.md).
 
-The `owner` field is an additive change to the `v0` response. Consumers that
-ignore additional response fields can continue reading the same version.
+The `owner` and `rule_sets` fields are additive changes to the `v0` response.
+Consumers that ignore additional response fields can continue reading the
+same version.

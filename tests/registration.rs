@@ -145,7 +145,7 @@ async fn registry_pages_summaries_and_reads_all_versions() {
         vec![json!({
             "source": source, "path": path, "id": id, "version": huge_version,
             "kind": "review", "name": review["name"], "description": review["description"],
-            "owner": greatest_owner, "scan": scan,
+            "owner": greatest_owner, "scan": scan, "rule_sets": [],
         })]
     );
 
@@ -154,11 +154,11 @@ async fn registry_pages_summaries_and_reads_all_versions() {
         next_page,
         vec![
             json!({"source": source, "path": path, "id": "other", "version": "1.0",
-                "kind": "check", "owner": greatest_owner, "scan": scan}),
+                "kind": "check", "owner": greatest_owner, "scan": scan, "rule_sets": []}),
             json!({"source": "a.test/team/rules", "path": path, "id": id, "version": "1.0",
-                "kind": "check", "owner": greatest_owner, "scan": scan}),
+                "kind": "check", "owner": greatest_owner, "scan": scan, "rule_sets": []}),
             json!({"source": source, "path": "checks/other", "id": id, "version": "1.0",
-                "kind": "check", "owner": greatest_owner, "scan": scan}),
+                "kind": "check", "owner": greatest_owner, "scan": scan, "rule_sets": []}),
         ]
     );
 
@@ -172,6 +172,7 @@ async fn registry_pages_summaries_and_reads_all_versions() {
     for (version, index) in versions.iter().zip([2, 0, 1]) {
         let mut expected = older[index].clone();
         expected["owner"] = json!(older_owner);
+        expected["rule_sets"] = json!([]);
         expected["digest"] = older_receipt[index]["digest"].clone();
         expected["commit"] = json!(COMMIT);
         expected["registered_at"] = version["registered_at"].clone();
@@ -180,6 +181,7 @@ async fn registry_pages_summaries_and_reads_all_versions() {
     }
     let mut expected_review = review;
     expected_review["owner"] = json!(greatest_owner);
+    expected_review["rule_sets"] = json!([]);
     expected_review["digest"] = greatest_receipt[0]["digest"].clone();
     expected_review["commit"] = json!(COMMIT);
     expected_review["registered_at"] =
@@ -589,6 +591,123 @@ fn set_batch(sets: Vec<Value>) -> Value {
 
 async fn set_outcomes(address: SocketAddr, batch: Value) -> Value {
     registration_outcomes(address, RULE_SET_ROUTE, batch.to_string()).await
+}
+
+// REQ-0029, REQ-0030
+#[tokio::test(flavor = "multi_thread")]
+async fn rule_reads_include_memberships_for_the_exact_registered_version() {
+    let database = postgres().await;
+    let address = start_service(migrated_pool(&database).await).await;
+    let template: Value = serde_json::from_str(vectors()[0].input.get()).unwrap();
+    let mut latest_rule = template.clone();
+    latest_rule["version"] = json!("1.10");
+    let mut other_source = latest_rule.clone();
+    other_source["source"] = json!("github.com/example/local");
+    let mut other_path = latest_rule.clone();
+    other_path["path"] = json!(".please/checks/other");
+    let receipt = outcomes(
+        address,
+        json!({"sender": "ci", "commit": COMMIT, "rules": [
+            template, latest_rule, other_source, other_path
+        ]})
+        .to_string(),
+    )
+    .await;
+
+    let older_member = set_member();
+    let mut latest_member = older_member.clone();
+    latest_member["version"] = latest_rule["version"].clone();
+    latest_member["digest"] = receipt[1]["digest"].clone();
+
+    let mut older = rule_set(json!([older_member]));
+    older["version"] = json!("2.2");
+    let mut latest = rule_set(json!([latest_member]));
+    latest["version"] = json!("2.10");
+    latest["name"] = json!("  <b>Baseline</b> & more\r\n");
+    let mut intermediate = latest.clone();
+    intermediate["version"] = json!("2.3");
+    intermediate["name"] = json!("Previous display name");
+    let mut second = rule_set(json!([latest_member]));
+    second["id"] = json!("second");
+    let mut archived = rule_set(json!([latest_member]));
+    archived["id"] = json!("archive");
+    let mut empty = rule_set(json!([]));
+    empty["id"] = json!("archive");
+    empty["version"] = json!("2.0");
+    let receipts = set_outcomes(
+        address,
+        set_batch(vec![latest, empty, older, archived, intermediate, second]),
+    )
+    .await;
+    assert_eq!(receipts.as_array().unwrap().len(), 6);
+    assert!(
+        receipts
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["outcome"] == "created")
+    );
+
+    let membership = |id, version, name| {
+        json!({
+            "source": "github.com/example/sets", "path": ".",
+            "id": id, "version": version, "name": name,
+        })
+    };
+    let baseline = membership("baseline", "2.10", "  <b>Baseline</b> & more\r\n");
+    let second = membership("second", "1.0", "second");
+    let page = rules_page(address, "/v0/rules").await;
+    assert_eq!(page.len(), 3);
+    for summary in &page {
+        assert_eq!(summary["version"], "1.10");
+        let expected =
+            if summary["source"] == template["source"] && summary["path"] == template["path"] {
+                json!([baseline, second])
+            } else {
+                json!([])
+            };
+        assert_eq!(summary["rule_sets"], expected, "{summary}");
+    }
+
+    let versions = rules_page(
+        address,
+        "/v0/rules/detail?source=github.com/example/catalog&path=.please/checks/format&id=format",
+    )
+    .await;
+    assert_eq!(versions.len(), 2);
+    assert_eq!(versions[0]["version"], "1.0");
+    assert_eq!(
+        versions[0]["rule_sets"],
+        json!([membership("baseline", "2.2", "baseline")])
+    );
+    assert_eq!(versions[1]["version"], "1.10");
+    assert_eq!(
+        versions[1]["rule_sets"],
+        json!([
+            membership("archive", "1.0", "archive"),
+            membership("baseline", "2.3", "Previous display name"),
+            baseline,
+            second,
+        ])
+    );
+
+    let list_schema: Value =
+        serde_json::from_str(include_str!("../why/contracts/read/rules.schema.json")).unwrap();
+    let detail_schema: Value =
+        serde_json::from_str(include_str!("../why/contracts/read/rule.schema.json")).unwrap();
+    let list = jsonschema::draft202012::new(&list_schema).unwrap();
+    list.validate(&json!(page)).unwrap();
+    let registry = jsonschema::Registry::new()
+        .add("https://ledger.example/rules.schema.json", list_schema)
+        .unwrap()
+        .prepare()
+        .unwrap();
+    let detail = jsonschema::draft202012::options()
+        .with_base_uri("https://ledger.example/rule.schema.json")
+        .with_registry(&registry)
+        .build(&detail_schema)
+        .unwrap();
+    detail.validate(&json!(versions)).unwrap();
 }
 
 async fn stored_set(pool: &PgPool) -> Value {

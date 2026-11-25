@@ -5,6 +5,11 @@ description: >-
   source, path and ID once, with the numerically greatest registered version
   and that version's kind, name, description and owner. The owner is the
   sender stored for the first registration of that version, as received.
+  Each summary must list the identity, version and display name of every
+  Rule Set whose numerically greatest registered version, as visible when
+  the ledger reads the page, contains the summarized rule version, including
+  disabled members. The display name falls back to the set ID when absent.
+  If no set matches, the list must be empty.
   The ledger must sort by that version's name, falling back to the local ID
   when absent. It must compare Unicode lowercase names by code point, then
   break ties by source, path and ID in ascending code point order. A
@@ -18,3 +23,5 @@ decisions:
   - why:DEC-0010
   - why:DEC-0011
   - why:DEC-0012
+  - why:DEC-0016
+  - why:DEC-0017
