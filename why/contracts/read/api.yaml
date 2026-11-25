@@ -72,3 +72,10 @@ contracts:
     requirements:
       - REQ-0040
       - REQ-0041
+  - id: CON-0016
+    name: Commit Evidence
+    document: commit-evidence.md
+    schema: commit-evidence.schema.json
+    requirements:
+      - REQ-0019
+      - REQ-0046

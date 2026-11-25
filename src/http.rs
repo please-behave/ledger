@@ -1,4 +1,4 @@
-use crate::attestation::{Envelope, valid_rule_identity, valid_version};
+use crate::attestation::{Envelope, valid_commit, valid_rule_identity, valid_version};
 use crate::database;
 use crate::registration::{JsonObject, Outcome, OutcomeKind, RegistrationRequest};
 use crate::release_fact::ReleaseFact;
@@ -26,6 +26,7 @@ pub fn router(pool: PgPool) -> Router {
         .route("/v0/attestations", post(ingest).get(history))
         .route("/v0/attestations/latest", get(latest))
         .route("/v0/attestations/{id}", get(read))
+        .route("/v0/repositories/commit-evidence", get(commit_evidence))
         .route("/v0/rules", get(rules))
         .route("/v0/rules/detail", get(rule_detail))
         .route("/v0/rule-sets", get(rule_sets))
@@ -197,6 +198,26 @@ async fn read(
         Ok(None) => Err(StatusCode::NOT_FOUND),
         Err(error) => Err(read_failure(&error)),
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CommitEvidenceQuery {
+    repository: String,
+    commit: String,
+}
+
+async fn commit_evidence(
+    State(pool): State<PgPool>,
+    Query(query): Query<CommitEvidenceQuery>,
+) -> Result<Json<Value>, StatusCode> {
+    if query.repository.contains('\0') || !valid_commit(&query.commit) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let evidence = database::commit_evidence(&pool, &query.repository, &query.commit)
+        .await
+        .map_err(|error| read_failure(&error))?;
+    Ok(Json(json!({ "evidence": evidence })))
 }
 
 fn read_failure(error: &sqlx::Error) -> StatusCode {

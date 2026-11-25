@@ -1,0 +1,12 @@
+id: REQ-0045
+name: Preserve Attestation Authentication Method
+description: >-
+  The ledger must accept an optional authentication method from the gateway
+  alongside the authenticated sender of an attestation, and preserve it in the
+  stored envelope. The values are api_key and github_oidc. Omission leaves
+  the method unknown.
+rationale: >-
+  Readers can see how the sender was authenticated when the gateway supplied
+  that information.
+decisions:
+  - why:DEC-0008

@@ -1,0 +1,15 @@
+id: REQ-0046
+name: Commit Evidence
+description: >-
+  For a repository and commit, the ledger must select the newest attestation
+  containing check by receipt time and then by greater attestation ID, or
+  explicitly report no evidence if none qualifies. It must report the selected
+  attestation's ID, overall status, receipt time, sender and authentication
+  method when known. It must evaluate the Rule Set bindings at check with the
+  same completeness and non-passing member statuses as the repository
+  compliance read.
+rationale: >-
+  Readers can assess reported evidence for a particular commit from a single
+  run, even after other commits have been checked.
+decisions:
+  - why:DEC-0021

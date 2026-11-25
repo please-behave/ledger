@@ -1,3 +1,4 @@
+use crate::attestation::{AuthMethod, valid_commit};
 use crate::registration::JsonObject;
 use anyhow::{Result, ensure};
 use serde::Deserialize;
@@ -15,22 +16,6 @@ pub(crate) struct ReleaseFact {
     pub auth_method: AuthMethod,
 }
 
-#[derive(Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum AuthMethod {
-    ApiKey,
-    GithubOidc,
-}
-
-impl AuthMethod {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::ApiKey => "api_key",
-            Self::GithubOidc => "github_oidc",
-        }
-    }
-}
-
 impl ReleaseFact {
     pub fn parse(body: &[u8]) -> Result<Self> {
         let JsonObject(fact) = serde_json::from_slice::<JsonObject<Self>>(body)?;
@@ -42,11 +27,7 @@ impl ReleaseFact {
                 "invalid repository or version"
             );
         }
-        ensure!(
-            matches!(fact.commit.len(), 40 | 64)
-                && fact.commit.bytes().all(|byte| byte.is_ascii_hexdigit()),
-            "invalid release commit"
-        );
+        ensure!(valid_commit(&fact.commit), "invalid release commit");
         ensure!(
             !fact.sender.is_empty() && !fact.sender.contains('\0'),
             "invalid sender"

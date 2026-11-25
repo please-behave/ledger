@@ -73,6 +73,18 @@ const SET_SOURCE: &str = "github.com/example/sets";
 const SET_COMPLIANCE: &str =
     "/v0/rule-sets/compliance?source=github.com%2Fexample%2Fsets&path=.&id=baseline";
 const COMPLETED_SETS: &str = "/v0/repositories/completed-rule-sets";
+const COMMIT_EVIDENCE: &str = "/v0/repositories/commit-evidence";
+
+async fn commit_evidence(address: SocketAddr, repository: &str, commit: &str) -> Value {
+    let (status, body) = read_json(
+        address,
+        format!("{COMMIT_EVIDENCE}?repository={repository}&commit={commit}"),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(body.get("evidence").is_some(), "{body}");
+    body["evidence"].clone()
+}
 
 async fn register_for_compliance(
     address: SocketAddr,
@@ -120,7 +132,7 @@ fn compliance_evidence(
     report
 }
 
-// REQ-0040, REQ-0041: both reads evaluate the currently bound versions against check evidence.
+// REQ-0040, REQ-0041, REQ-0046: the reads share completeness for check evidence.
 #[tokio::test(flavor = "multi_thread")]
 async fn rule_set_compliance_uses_only_the_newest_check_evidence() {
     let postgres = postgres().await;
@@ -246,6 +258,39 @@ async fn rule_set_compliance_uses_only_the_newest_check_evidence() {
         )
     );
     assert_eq!(
+        commit_evidence(address, "complete", COMMIT).await["rule_sets"],
+        json!([
+            {"source": SET_SOURCE, "path": ".", "id": "baseline", "version": "1.0", "name": "Baseline",
+             "registered": true, "complete": true, "non_passing_members": []},
+            {"source": SET_SOURCE, "path": ".", "id": "secondary", "version": "1.0", "name": "secondary",
+             "registered": true, "complete": true, "non_passing_members": []}
+        ])
+    );
+    assert_eq!(
+        commit_evidence(address, "incomplete", COMMIT).await["rule_sets"],
+        json!([
+            {"source": SET_SOURCE, "path": ".", "id": "baseline", "version": "1.0", "name": "Baseline",
+             "registered": true, "complete": false, "non_passing_members": failures}
+        ])
+    );
+    assert_eq!(
+        commit_evidence(address, "unknown", COMMIT).await["rule_sets"],
+        json!([
+            {"source": SET_SOURCE, "path": ".", "id": "baseline", "version": "9.0", "name": "baseline",
+             "registered": false, "complete": false, "non_passing_members": []}
+        ])
+    );
+    for repository in ["no-longer-bound", "ignored-binding"] {
+        assert_eq!(
+            commit_evidence(address, repository, COMMIT).await["rule_sets"],
+            json!([])
+        );
+    }
+    assert_eq!(
+        commit_evidence(address, "ignored-run", COMMIT).await,
+        Value::Null
+    );
+    assert_eq!(
         read_json(address, SET_COMPLIANCE.replace("baseline", "absent")).await,
         (200, json!([]))
     );
@@ -255,6 +300,90 @@ async fn rule_set_compliance_uses_only_the_newest_check_evidence() {
             .0,
         400
     );
+}
+
+// REQ-0045, REQ-0046: receipt ordering and sender provenance belong to the exact commit.
+#[tokio::test(flavor = "multi_thread")]
+async fn commit_evidence_selects_the_newest_check_for_the_exact_pair() {
+    let postgres = postgres().await;
+    let pool = migrated_pool(&postgres).await;
+    let address = start_service(pool.clone()).await;
+    let repository = "github.com/example/project";
+    let encoded_repository = "github.com%2Fexample%2Fproject";
+    let other_commit = "A".repeat(64);
+    let first = ingest(address, envelope(repository, &["check"], COMMIT, &[])).await;
+    let mut report = envelope(repository, &["ci", "check"], COMMIT, &["FAIL"]);
+    report["sender"] = json!(repository);
+    report["auth_method"] = json!("github_oidc");
+    report["attestation"]["overall"] = json!("FAIL");
+    let selected = ingest(address, report.clone()).await;
+    let later_id = ingest(address, envelope(repository, &["check"], COMMIT, &[])).await;
+    assert!(first < selected && selected < later_id);
+    sqlx::query(
+        "update attestations set received_at = case when id = $3::uuid
+         then '2026-11-24T00:00:00Z'::timestamptz else '2026-11-25T00:00:00Z'::timestamptz end
+         where id in ($1::uuid, $2::uuid, $3::uuid)",
+    )
+    .bind(&first)
+    .bind(&selected)
+    .bind(&later_id)
+    .execute(&pool)
+    .await
+    .expect("fix receipt times to exercise both ordering keys");
+
+    ingest(address, envelope(repository, &["pre-push"], COMMIT, &[])).await;
+    let other = ingest(
+        address,
+        envelope(repository, &["check"], &other_commit, &[]),
+    )
+    .await;
+    ingest(
+        address,
+        envelope("other-repository", &["check"], COMMIT, &[]),
+    )
+    .await;
+    assert_eq!(
+        commit_evidence(address, encoded_repository, COMMIT).await,
+        json!({
+            "id": selected, "overall": "FAIL", "received_at": "2026-11-25T00:00:00.000000Z",
+            "sender": repository, "auth_method": "github_oidc", "rule_sets": []
+        })
+    );
+    let legacy = commit_evidence(address, encoded_repository, &other_commit).await;
+    assert_eq!(legacy["id"], other);
+    assert_eq!(legacy.get("auth_method"), Some(&Value::Null));
+    assert_eq!(
+        commit_evidence(address, encoded_repository, &commit('f')).await,
+        Value::Null
+    );
+    assert_eq!(
+        commit_evidence(address, "other-repository", &other_commit).await,
+        Value::Null
+    );
+
+    for query in [
+        format!("repository={encoded_repository}"),
+        format!("repository={encoded_repository}&commit=short"),
+        format!("repository={encoded_repository}&commit={COMMIT}&commit={COMMIT}"),
+        format!("repository={encoded_repository}&commit={COMMIT}&extra=1"),
+        format!("repository=%00&commit={COMMIT}"),
+    ] {
+        assert_eq!(
+            read_json(address, format!("{COMMIT_EVIDENCE}?{query}"))
+                .await
+                .0,
+            400
+        );
+    }
+    for unsupported in [json!("anonymous"), Value::Null] {
+        report["auth_method"] = unsupported;
+        let body = report.to_string();
+        let (status, _) =
+            tokio::task::spawn_blocking(move || post(address, "/v0/attestations", &body))
+                .await
+                .expect("ingest finishes");
+        assert_eq!(status, 400);
+    }
 }
 
 // REQ-0015: the newest attestation of every repository and execution points, in a stable order.

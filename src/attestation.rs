@@ -22,7 +22,29 @@ static BOUND_RULE_SETS_VALIDATOR: LazyLock<jsonschema::Validator> = LazyLock::ne
 #[serde(deny_unknown_fields)]
 pub struct Envelope {
     pub sender: String,
+    #[serde(default, deserialize_with = "deserialize_present")]
+    pub auth_method: Option<AuthMethod>,
     pub attestation: Attestation,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthMethod {
+    ApiKey,
+    GithubOidc,
+}
+
+impl AuthMethod {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::ApiKey => "api_key",
+            Self::GithubOidc => "github_oidc",
+        }
+    }
+}
+
+pub(crate) fn valid_commit(commit: &str) -> bool {
+    matches!(commit.len(), 40 | 64) && commit.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 #[derive(Deserialize)]
@@ -70,16 +92,16 @@ pub struct RuleMetadata {
     pub source: String,
     pub path: String,
     pub id: String,
-    #[serde(default, deserialize_with = "deserialize_present_string")]
+    #[serde(default, deserialize_with = "deserialize_present")]
     pub version: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_present_string")]
+    #[serde(default, deserialize_with = "deserialize_present")]
     pub digest: Option<String>,
 }
 
-fn deserialize_present_string<'de, D: Deserializer<'de>>(
+fn deserialize_present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
     deserializer: D,
-) -> Result<Option<String>, D::Error> {
-    String::deserialize(deserializer).map(Some)
+) -> Result<Option<T>, D::Error> {
+    T::deserialize(deserializer).map(Some)
 }
 
 fn deserialize_rule<'de, D: Deserializer<'de>>(

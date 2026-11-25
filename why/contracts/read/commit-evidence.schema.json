@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Commit evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["evidence"],
+  "properties": {
+    "evidence": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "overall", "received_at", "sender", "auth_method", "rule_sets"],
+          "properties": {
+            "id": { "$ref": "attestation.schema.json#/$defs/summary/properties/id" },
+            "overall": { "$ref": "attestation.schema.json#/$defs/summary/properties/overall" },
+            "received_at": { "$ref": "attestation.schema.json#/$defs/summary/properties/received_at" },
+            "sender": { "$ref": "attestation.schema.json#/$defs/summary/properties/sender" },
+            "auth_method": {
+              "anyOf": [
+                { "$ref": "../ingest/attestation.schema.json#/properties/auth_method" },
+                { "type": "null" }
+              ]
+            },
+            "rule_sets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["source", "path", "id", "version", "name", "registered", "complete", "non_passing_members"],
+                "properties": {
+                  "source": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/source" },
+                  "path": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/path" },
+                  "id": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/id" },
+                  "version": { "$ref": "../ingest/rule-set-registration.schema.json#/$defs/version" },
+                  "name": { "type": "string" },
+                  "registered": { "type": "boolean" },
+                  "complete": { "type": "boolean" },
+                  "non_passing_members": { "$ref": "rule-set-compliance.schema.json#/items/properties/non_passing_members" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

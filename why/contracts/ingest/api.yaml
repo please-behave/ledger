@@ -16,6 +16,7 @@ contracts:
       - REQ-0025
       - REQ-0036
       - REQ-0037
+      - REQ-0045
   - id: CON-0006
     name: Rule Registration
     document: rule-registration.md

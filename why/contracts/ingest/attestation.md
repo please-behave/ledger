@@ -13,6 +13,11 @@ Producer: the gateway. Consumer: the ledger. All paths of this API start with `/
 
 Any other failure to store is answered with `500` and stores nothing.
 
+The gateway may include `auth_method` alongside `sender`, with the value
+`api_key` or `github_oidc` from its authentication of the sender. The stored
+envelope preserves the field when supplied. Omitting it leaves the
+authentication method unknown.
+
 ## Rule metadata
 
 A result still identifies the rule within the run by its top-level `id`.

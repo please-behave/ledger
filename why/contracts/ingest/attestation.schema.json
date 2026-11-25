@@ -10,6 +10,10 @@
       "type": "string",
       "description": "The authenticated sender, set by the gateway."
     },
+    "auth_method": {
+      "enum": ["api_key", "github_oidc"],
+      "description": "The method used by the gateway to authenticate the sender, when supplied."
+    },
     "attestation": {
       "type": "object",
       "additionalProperties": false,

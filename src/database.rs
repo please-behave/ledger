@@ -572,13 +572,20 @@ pub(crate) struct CompletedRuleSets {
 
 macro_rules! rule_set_compliance_query {
     ($binding_filter:literal, $select:literal) => {
+        rule_set_compliance_query!(
+            "select distinct on (repository) repository, id, rule_sets
+             from attestations
+             where execution_points @> array['check']
+             order by repository, received_at desc, id desc",
+            $binding_filter,
+            $select
+        )
+    };
+    ($latest_check:literal, $binding_filter:literal, $select:literal) => {
         concat!(
-            "with latest_check as (
-                 select distinct on (repository) repository, id, rule_sets
-                 from attestations
-                 where execution_points @> array['check']
-                 order by repository, received_at desc, id desc
-             ), bindings as (
+            "with latest_check as (",
+            $latest_check,
+            "), bindings as (
                  select distinct a.repository, a.id as attestation_id,
                         binding->>'source' as source, binding->>'path' as path,
                         binding->>'id' as id, binding->>'version' as version
@@ -646,6 +653,47 @@ pub(crate) async fn completed_rule_sets(
          group by repository order by repository"
     ))
     .fetch_all(pool)
+    .await
+}
+
+#[derive(Serialize, FromRow)]
+pub(crate) struct CommitEvidence {
+    id: String,
+    overall: String,
+    received_at: String,
+    sender: String,
+    auth_method: Option<String>,
+    rule_sets: Json<Value>,
+}
+
+pub(crate) async fn commit_evidence(
+    pool: &PgPool,
+    repository: &str,
+    commit: &str,
+) -> Result<Option<CommitEvidence>, sqlx::Error> {
+    sqlx::query_as(rule_set_compliance_query!(
+        "select repository, id, overall, received_at, sender, rule_sets,
+                document->>'auth_method' as auth_method
+         from attestations
+         where repository = $1 and commit_sha = $2 and execution_points @> array['check']
+         order by received_at desc, id desc
+         limit 1",
+        "",
+        r#"select id::text as id, overall, sender, auth_method,
+                  to_char(received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as received_at,
+                  coalesce((
+                      select json_agg(json_build_object(
+                          'source', source, 'path', path, 'id', id, 'version', version, 'name', name,
+                          'registered', registered, 'complete', complete,
+                          'non_passing_members', non_passing_members
+                      ) order by source, path, id, version)
+                      from compliance
+                  ), '[]'::json) as rule_sets
+           from latest_check"#
+    ))
+    .bind(repository)
+    .bind(commit)
+    .fetch_optional(pool)
     .await
 }
 
