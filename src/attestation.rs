@@ -1,4 +1,6 @@
 use serde::{Deserialize, Deserializer, de::Error};
+use serde_json::Value;
+use std::sync::LazyLock;
 
 // The indexed fields must fit a PostgreSQL B-tree entry even in UTF-8.
 const MAX_RULE_SOURCE_CHARS: usize = 256;
@@ -6,6 +8,15 @@ const MAX_RULE_PATH_CHARS: usize = 256;
 const MAX_RULE_ID_CHARS: usize = 128;
 const MAX_RULE_VERSION_CHARS: usize = 64;
 const MAX_RULE_DIGEST_CHARS: usize = 128;
+
+static BOUND_RULE_SETS_VALIDATOR: LazyLock<jsonschema::Validator> = LazyLock::new(|| {
+    let schema: Value = serde_json::from_str(include_str!(
+        "../why/contracts/ingest/attestation.schema.json"
+    ))
+    .expect("bundled attestation schema is JSON");
+    jsonschema::draft202012::new(&schema["$defs"]["boundRuleSets"])
+        .expect("bundled Rule Set binding schema is valid")
+});
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -21,8 +32,26 @@ pub struct Attestation {
     pub repository: String,
     pub commit: String,
     pub execution_points: Vec<String>,
+    #[serde(
+        default = "empty_rule_sets",
+        deserialize_with = "deserialize_rule_sets"
+    )]
+    pub rule_sets: Value,
     pub overall: Overall,
     pub results: Vec<RuleResult>,
+}
+
+fn empty_rule_sets() -> Value {
+    Value::Array(Vec::new())
+}
+
+fn deserialize_rule_sets<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Value, D::Error> {
+    let rule_sets = Value::deserialize(deserializer)?;
+    if BOUND_RULE_SETS_VALIDATOR.is_valid(&rule_sets) {
+        Ok(rule_sets)
+    } else {
+        Err(D::Error::custom("invalid bound Rule Sets"))
+    }
 }
 
 #[derive(Deserialize)]

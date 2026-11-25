@@ -1,0 +1,12 @@
+id: REQ-0037
+name: Store Bound Rule Sets with the Attestation
+description: >-
+  The ledger must store each reported binding's identity, version and execution
+  points with the attestation in the same transaction as its results. It must
+  preserve the supplied list and accept bindings for unregistered versions.
+  An attestation without the list must have no stored bindings.
+rationale: >-
+  Reported bindings are evidence of which Rule Set versions a run applied,
+  including when their registrations arrive later.
+decisions:
+  - why:DEC-0018

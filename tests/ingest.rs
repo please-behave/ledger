@@ -38,6 +38,16 @@ fn rule_metadata() -> Value {
     })
 }
 
+fn rule_set_binding() -> Value {
+    json!({
+        "source": "github.com/owner/rules",
+        "path": ".",
+        "id": "conventions",
+        "version": "2.0",
+        "execution_points": ["ci", "pre-push"]
+    })
+}
+
 async fn start_service(pool: PgPool) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let address = listener.local_addr().expect("address");
@@ -75,6 +85,7 @@ fn id_of(body: &str) -> Uuid {
 // REQ-0010: a valid envelope is appended with all of its results.
 // REQ-0013: the received envelope is stored as received.
 // REQ-0024: an envelope with no rule metadata is still accepted.
+// REQ-0036, REQ-0037: omitted bindings are accepted and stored as an empty list.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_valid_envelope_is_stored_with_its_results() {
     let postgres = postgres().await;
@@ -85,8 +96,8 @@ async fn a_valid_envelope_is_stored_with_its_results() {
 
     assert_eq!(status, 201);
     let id = id_of(&body);
-    let row: (String, String, String, Vec<String>, String, i32, Value) = sqlx::query_as(
-        "select sender, repository, commit_sha, execution_points, overall, schema_version, document \
+    let row: (String, String, String, Vec<String>, String, i32, Value, Value) = sqlx::query_as(
+        "select sender, repository, commit_sha, execution_points, overall, schema_version, document, rule_sets \
          from attestations where id = $1",
     )
     .bind(id)
@@ -100,6 +111,7 @@ async fn a_valid_envelope_is_stored_with_its_results() {
     assert_eq!(row.4, "FAIL");
     assert_eq!(row.5, 1);
     assert_eq!(row.6, envelope());
+    assert_eq!(row.7, json!([]));
     let results: Vec<(i32, String, String, String)> = sqlx::query_as(
         "select position, rule_id, kind, status from attestation_results \
          where attestation_id = $1 order by position",
@@ -175,6 +187,73 @@ async fn optional_rule_metadata_is_preserved_in_rows_and_the_document() {
             ("hooks".to_owned(), json!({})),
         ]
     );
+}
+
+// REQ-0036, REQ-0037: empty and unregistered bindings are stored as supplied.
+#[tokio::test(flavor = "multi_thread")]
+async fn bound_rule_sets_are_stored_with_the_attestation() {
+    let postgres = postgres().await;
+    let pool = migrated_pool(&postgres).await;
+    let address = start_service(pool.clone()).await;
+
+    let mut other_version = rule_set_binding();
+    other_version["version"] = json!("1.1");
+    other_version["execution_points"] = json!(["pre-push"]);
+    for rule_sets in [json!([]), json!([rule_set_binding(), other_version])] {
+        let mut document = envelope();
+        document["attestation"]["rule_sets"] = rule_sets.clone();
+
+        let (status, body) = ingest(address, document.to_string()).await;
+        assert_eq!(status, 201);
+        let (stored_document, stored_bindings): (Value, Value) =
+            sqlx::query_as("select document, rule_sets from attestations where id = $1")
+                .bind(id_of(&body))
+                .fetch_one(&pool)
+                .await
+                .expect("read the attestation and its bindings");
+        assert_eq!(stored_document, document);
+        assert_eq!(stored_bindings, rule_sets);
+    }
+    assert_eq!(count(&pool, "rule_set_registrations").await, 0);
+    assert_eq!(count(&pool, "attestation_results").await, 6);
+}
+
+// REQ-0011, REQ-0036: invalid bindings are rejected before any evidence is stored.
+#[tokio::test(flavor = "multi_thread")]
+async fn invalid_bound_rule_sets_are_rejected() {
+    let postgres = postgres().await;
+    let pool = migrated_pool(&postgres).await;
+    let address = start_service(pool.clone()).await;
+    let mut invalid = vec![
+        Value::Null,
+        json!({}),
+        json!([{}]),
+        json!(vec![rule_set_binding(); 101]),
+    ];
+    for (field, value) in [
+        ("source", json!("github.com:443/owner/rules")),
+        ("path", json!("../rules")),
+        ("id", json!("invalid id")),
+        ("version", json!("02.0")),
+        ("execution_points", json!([])),
+        ("execution_points", json!(vec!["ci"; 65])),
+        ("execution_points", json!([""])),
+        ("execution_points", json!(["ci\0"])),
+        ("execution_points", json!(["a".repeat(129)])),
+        ("extra", json!(true)),
+    ] {
+        let mut binding = rule_set_binding();
+        binding[field] = value;
+        invalid.push(json!([binding]));
+    }
+
+    for rule_sets in invalid {
+        let mut document = envelope();
+        document["attestation"]["rule_sets"] = rule_sets.clone();
+        let (status, _) = ingest(address, document.to_string()).await;
+        assert_eq!(status, 400, "bound Rule Sets {rule_sets}");
+    }
+    assert_nothing_stored(&pool).await;
 }
 
 // REQ-0011, REQ-0024: metadata outside the contract is rejected atomically.
@@ -292,8 +371,10 @@ async fn a_failing_result_leaves_no_attestation_behind() {
     .await
     .expect("add a constraint that rejects the last result");
     let address = start_service(pool.clone()).await;
+    let mut document = envelope();
+    document["attestation"]["rule_sets"] = json!([rule_set_binding()]);
 
-    let (status, _) = ingest(address, envelope().to_string()).await;
+    let (status, _) = ingest(address, document.to_string()).await;
 
     assert_eq!(status, 400);
     assert_nothing_stored(&pool).await;

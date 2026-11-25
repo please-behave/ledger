@@ -1,0 +1,10 @@
+id: REQ-0036
+name: Optional Bound Rule Sets on Ingest
+description: >-
+  An attestation in an ingest envelope may omit the bound Rule Set list.
+  If present, the list must satisfy the Attestation Envelope contract.
+rationale: >-
+  Existing producers can keep sending attestations while newer producers
+  report the Rule Sets they bound during a run.
+decisions:
+  - why:DEC-0018

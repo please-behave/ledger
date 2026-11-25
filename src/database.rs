@@ -67,8 +67,8 @@ pub async fn append_attestation(
     let mut transaction = pool.begin().await?;
     sqlx::query(
         "insert into attestations \
-         (id, sender, repository, commit_sha, execution_points, overall, schema_version, document) \
-         values ($1, $2, $3, $4, $5, $6, $7, $8)",
+         (id, sender, repository, commit_sha, execution_points, overall, schema_version, document, rule_sets) \
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
     )
     .bind(id)
     .bind(&envelope.sender)
@@ -78,6 +78,7 @@ pub async fn append_attestation(
     .bind(attestation.overall.as_str())
     .bind(attestation.schema_version)
     .bind(document)
+    .bind(&attestation.rule_sets)
     .execute(&mut *transaction)
     .await?;
     for (position, result) in (0_i32..).zip(&attestation.results) {
