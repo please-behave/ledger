@@ -35,6 +35,7 @@ contracts:
       - REQ-0020
       - REQ-0021
       - REQ-0022
+      - REQ-0049
   - id: CON-0007
     name: Registered Rules
     document: rules.md

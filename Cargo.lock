@@ -1568,6 +1568,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
+ "form_urlencoded",
  "jsonschema",
  "serde",
  "serde_json",

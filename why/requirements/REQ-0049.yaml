@@ -1,0 +1,10 @@
+id: REQ-0049
+name: Attestation History by Repository
+description: >-
+  When `repository` is supplied to `GET /v0/attestations`, the ledger must
+  page only through attestations whose stored repository identity exactly
+  matches the decoded parameter. The read must answer with `400` if the
+  parameter is repeated, empty or contains a NUL character.
+rationale: >-
+  The cockpit can page through one repository's history without scanning
+  attestations from other repositories.

@@ -153,14 +153,15 @@ async fn latest(State(pool): State<PgPool>) -> Result<Json<Vec<database::Summary
         .map_err(|error| read_failure(&error))
 }
 
-struct Page {
+struct HistoryPage {
     limit: i64,
     before: Option<Uuid>,
+    repository: Option<String>,
 }
 
-impl Page {
+impl HistoryPage {
     fn parse(query: Option<&str>) -> Option<Self> {
-        let (mut limit, mut before) = (None, None);
+        let (mut limit, mut before, mut repository) = (None, None, None);
         for pair in query
             .unwrap_or_default()
             .split('&')
@@ -170,12 +171,20 @@ impl Page {
             match name {
                 "limit" if limit.is_none() => limit = Some(value.parse::<i64>().ok()?),
                 "before" if before.is_none() => before = Some(value.parse::<Uuid>().ok()?),
+                "repository" if repository.is_none() => {
+                    let (_, identity) = form_urlencoded::parse(pair.as_bytes()).next()?;
+                    if identity.is_empty() || identity.contains('\0') {
+                        return None;
+                    }
+                    repository = Some(identity.into_owned());
+                }
                 _ => return None,
             }
         }
         Some(Self {
             limit: page_limit(limit).ok()?,
             before,
+            repository,
         })
     }
 }
@@ -184,8 +193,8 @@ async fn history(
     State(pool): State<PgPool>,
     RawQuery(query): RawQuery,
 ) -> Result<Json<Vec<database::Summary>>, StatusCode> {
-    let page = Page::parse(query.as_deref()).ok_or(StatusCode::BAD_REQUEST)?;
-    database::attestation_history(&pool, page.before, page.limit)
+    let page = HistoryPage::parse(query.as_deref()).ok_or(StatusCode::BAD_REQUEST)?;
+    database::attestation_history(&pool, page.before, page.limit, page.repository.as_deref())
         .await
         .map(Json)
         .map_err(|error| read_failure(&error))

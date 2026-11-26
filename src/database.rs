@@ -921,14 +921,17 @@ pub async fn attestation_history(
     pool: &PgPool,
     before: Option<Uuid>,
     limit: i64,
+    repository: Option<&str>,
 ) -> Result<Vec<Summary>, sqlx::Error> {
     sqlx::query_as(summary_query!(
         "(select * from attestations where ($1::uuid is null or id < $1) \
+          and ($3::text is null or repository = $3) \
           order by id desc limit $2) a \
          order by a.id desc"
     ))
     .bind(before)
     .bind(limit)
+    .bind(repository)
     .fetch_all(pool)
     .await
 }

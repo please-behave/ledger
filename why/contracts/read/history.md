@@ -10,11 +10,12 @@ Producer: the ledger. Consumer: the cockpit. All paths of this API start with `/
 | --- | --- |
 | `limit` | The greatest number of summaries to return, an integer from 1 to 200. Defaults to 100. |
 | `before` | A UUID. Only attestations with a smaller identifier are returned. Without it the page starts at the newest attestation. The identifier need not belong to a stored attestation. |
+| `repository` | A URL-encoded normalized repository identity, for example `github.com%2Fowner%2Frepository`. Only attestations with that exact stored identity match. Omit it to include all repositories. |
 
-The answer is `400` when `limit` is not an integer from 1 to 200, when `before` is not a UUID, when a parameter is given more than once or when another parameter is given.
+The answer is `400` when `limit` is not an integer from 1 to 200, when `before` is not a UUID, when `repository` is empty or contains a NUL character, when a parameter is given more than once or when another parameter is given.
 
 ## Paging
 
-A reader pages by passing the identifier of the last summary it received as `before`. A page with fewer summaries than `limit` is the last one. Because identifiers are time-ordered, attestations received between two page reads are never inserted into the pages still to come, and every attestation that was stored when the first page was read is returned exactly once.
+A reader pages by passing the identifier of the last summary it received as `before` and keeping the same `repository` filter, if present. The filter is applied before the page limit. A page with fewer summaries than `limit` is the last one. Because identifiers are time-ordered, attestations received between two page reads are never inserted into the pages still to come, and every matching attestation that was stored when the first page was read is returned exactly once.
 
 The read changes nothing.

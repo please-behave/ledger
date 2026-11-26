@@ -1,10 +1,11 @@
 id: REQ-0021
 name: Paged Attestation History
 description: >-
-  `GET /v0/attestations` must return the summaries of all attestations ordered
-  by identifier from greatest to smallest, at most `limit` at a time, starting
-  after the identifier given as `before`, so that reading the pages in sequence
-  returns every stored attestation exactly once.
+  `GET /v0/attestations` must return matching attestation summaries ordered by
+  identifier from greatest to smallest, at most `limit` at a time, starting
+  after the identifier given as `before`. Reading the pages in sequence must
+  return every matching stored attestation exactly once. Without a filter,
+  every stored attestation matches.
 rationale: >-
   The cockpit shows the complete history, newest first, without reading it all
   at once.

@@ -990,7 +990,45 @@ async fn history_pages_return_every_attestation_once() {
     assert_eq!(seen, expected);
 }
 
-// REQ-0022: every malformed or out-of-range parameter is 400.
+// REQ-0049: filter by exact identity before taking each page.
+#[tokio::test(flavor = "multi_thread")]
+async fn history_pages_only_through_the_requested_repository() {
+    let postgres = postgres().await;
+    let address = start_service(migrated_pool(&postgres).await).await;
+    let repository = "github.com/owner/project";
+    let oldest = ingest(address, envelope(repository, &["ci"], COMMIT, &[])).await;
+    ingest(
+        address,
+        envelope("github.com/owner/project-tools", &["ci"], COMMIT, &[]),
+    )
+    .await;
+    let middle = ingest(address, envelope(repository, &["ci"], COMMIT, &[])).await;
+    let newest = ingest(address, envelope(repository, &["ci"], COMMIT, &[])).await;
+    ingest(
+        address,
+        envelope("github.com/other/project", &["ci"], COMMIT, &[]),
+    )
+    .await;
+
+    let query = "?repository=github.com%2Fowner%2Fproject&limit=2";
+    let first = history_ids(address, query).await;
+    assert_eq!(first, [newest, middle]);
+
+    let next = history_ids(address, &format!("{query}&before={}", first[1])).await;
+    assert_eq!(next, [oldest]);
+    assert!(
+        history_ids(address, "?repository=github.com/owner/Project")
+            .await
+            .is_empty()
+    );
+    assert!(
+        history_ids(address, "?repository=github.com/owner/missing")
+            .await
+            .is_empty()
+    );
+}
+
+// REQ-0022, REQ-0049: every malformed or out-of-range parameter is 400.
 #[tokio::test(flavor = "multi_thread")]
 async fn history_rejects_invalid_paging_parameters() {
     let postgres = postgres().await;
@@ -1008,6 +1046,10 @@ async fn history_rejects_invalid_paging_parameters() {
         "?before=not-a-uuid",
         "?before=",
         "?before=0190a8c2-0000-7000-8000-00000000000g",
+        "?repository",
+        "?repository=",
+        "?repository=github.com/owner/project&repository=github.com/owner/project",
+        "?repository=github.com%2Fowner%2Fproject%00",
         "?offset=1",
     ] {
         let path = format!("/v0/attestations{query}");
