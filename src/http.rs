@@ -3,6 +3,7 @@ use crate::database;
 use crate::registration::{JsonObject, Outcome, OutcomeKind, RegistrationRequest};
 use crate::release_fact::{ReleaseFact, valid_release_key_part};
 use crate::rule_set_registration::{RuleSetRequest, SetOutcome};
+use crate::target_registration::{TargetOutcome, TargetRequest};
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path, Query, RawQuery, State};
 use axum::http::StatusCode;
@@ -46,6 +47,10 @@ pub fn router(pool: PgPool) -> Router {
         .route(
             "/v0/rule-set-registrations",
             post(register_sets).layer(DefaultBodyLimit::max(MAX_INGEST_BODY_BYTES)),
+        )
+        .route(
+            "/v0/target-registrations",
+            post(register_targets).layer(DefaultBodyLimit::max(MAX_INGEST_BODY_BYTES)),
         )
         .route(
             "/v0/facts/releases",
@@ -143,6 +148,20 @@ async fn register_sets(
             })?;
         outcomes.push(outcome);
     }
+    Ok(Json(RegistrationReceipt { outcomes }))
+}
+
+async fn register_targets(
+    State(pool): State<PgPool>,
+    body: Bytes,
+) -> Result<Json<RegistrationReceipt<TargetOutcome>>, StatusCode> {
+    let request = TargetRequest::parse(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let outcomes = database::register_targets(&pool, request)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, "cannot store the deployment target registrations");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     Ok(Json(RegistrationReceipt { outcomes }))
 }
 

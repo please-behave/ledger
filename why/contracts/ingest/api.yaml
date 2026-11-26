@@ -40,3 +40,10 @@ contracts:
     requirements:
       - REQ-0043
       - REQ-0044
+  - id: CON-0020
+    name: Deployment Target Registration
+    document: target-registration.md
+    schema: target-registration.schema.json
+    requirements:
+      - REQ-0050
+      - REQ-0051

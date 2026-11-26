@@ -6,3 +6,4 @@ mod registration;
 mod release_fact;
 pub mod rule_digest;
 mod rule_set_registration;
+mod target_registration;

@@ -3,6 +3,7 @@ use crate::registration::{Outcome, OutcomeKind, Rule};
 use crate::release_fact::ReleaseFact;
 use crate::rule_digest::sha256_digest;
 use crate::rule_set_registration::{MemberFailure, RuleSet, SetOutcome};
+use crate::target_registration::{TargetOutcome, TargetOutcomeKind, TargetRequest};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -11,6 +12,7 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::types::Json;
 use sqlx::{AssertSqlSafe, FromRow, PgPool, Row};
+use std::collections::HashSet;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -139,6 +141,46 @@ pub(crate) async fn record_release(
     } else {
         OutcomeKind::Conflict
     })
+}
+
+pub(crate) async fn register_targets(
+    pool: &PgPool,
+    request: TargetRequest,
+) -> Result<Vec<TargetOutcome>, sqlx::Error> {
+    let (names, descriptions): (Vec<_>, Vec<_>) = request
+        .targets
+        .iter()
+        .map(|target| (target.name.as_str(), target.description.as_deref()))
+        .unzip();
+
+    // Keep the first entry for a name and acquire conflicting keys in name order.
+    let inserted: Vec<String> = sqlx::query_scalar(
+        "insert into deployment_targets (owner, name, description)
+         select distinct on (name) $1, name, description
+         from unnest($2::text[], $3::text[]) with ordinality as submitted(name, description, position)
+         order by name, position
+         on conflict (owner, name) do nothing
+         returning name",
+    )
+    .bind(&request.sender)
+    .bind(names)
+    .bind(descriptions)
+    .fetch_all(pool)
+    .await?;
+
+    let mut created: HashSet<_> = inserted.into_iter().collect();
+    Ok(request
+        .targets
+        .into_iter()
+        .map(|target| TargetOutcome {
+            outcome: if created.remove(&target.name) {
+                TargetOutcomeKind::Created
+            } else {
+                TargetOutcomeKind::Unchanged
+            },
+            name: target.name,
+        })
+        .collect())
 }
 
 pub(crate) async fn register_rule(
