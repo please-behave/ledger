@@ -110,7 +110,14 @@ async fn reconciles_inventory_and_records_each_head_observation_once() {
     );
     report(address, &next).await;
     report(address, &next).await;
-    report(address, &sync("owner/*", THIRD, vec![changed], vec![])).await;
+    let unchanged = sync(
+        "owner/*",
+        THIRD,
+        vec![changed],
+        vec![head("name", OTHER_COMMIT, THIRD)],
+    );
+    report(address, &unchanged).await;
+    assert_eq!(counts(&pool).await, (2, 2, 1));
 
     let attestation = json!({
         "sender": "ci",
@@ -206,6 +213,54 @@ async fn reconciles_inventory_and_records_each_head_observation_once() {
         ]
     );
     assert_eq!(counts(&pool).await, (2, 3, 1));
+}
+
+// REQ-0058: use the predecessor in observation time, preserving stored successors.
+#[tokio::test]
+async fn deduplicates_late_heads_across_overlapping_scopes() {
+    let database = postgres().await;
+    let pool = migrated_pool(&database).await;
+    let address = start_service(pool.clone()).await;
+
+    for (scope, completed_at, observed_at, commit) in [
+        ("owner/*", FIRST, FIRST, COMMIT),
+        ("owner/name", SECOND, SECOND, COMMIT),
+        ("owner/*", FOURTH, FOURTH, OTHER_COMMIT),
+        ("owner/name", THIRD, THIRD, COMMIT),
+    ] {
+        let snapshot = sync(
+            scope,
+            completed_at,
+            vec![repository("name")],
+            vec![head("name", commit, observed_at)],
+        );
+        report(address, &snapshot).await;
+    }
+    assert_eq!(counts(&pool).await, (1, 2, 2));
+
+    let late_change = sync(
+        "owner/name",
+        FOURTH,
+        vec![repository("name")],
+        vec![head("name", OTHER_COMMIT, THIRD)],
+    );
+    report(address, &late_change).await;
+    let heads: Vec<(String, bool)> = sqlx::query_as(
+        "select commit_sha, observed_at = $1::text::timestamptz
+         from repository_head_observations order by observed_at",
+    )
+    .bind(THIRD)
+    .fetch_all(&pool)
+    .await
+    .expect("read the head history after the late change");
+    assert_eq!(
+        heads,
+        [
+            (COMMIT.into(), false),
+            (OTHER_COMMIT.into(), true),
+            (OTHER_COMMIT.into(), false)
+        ]
+    );
 }
 
 // REQ-0057, REQ-0058: a scope affects only the repositories it covers.

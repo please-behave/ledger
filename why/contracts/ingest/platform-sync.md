@@ -47,10 +47,18 @@ platforms it preserves their case.
   `inventory` and match its default branch. The commit ID is full-length
   hexadecimal and is stored in lowercase. Include its commit time and
   the time of observation, which must be at or before sync completion.
-  The ledger appends each distinct repository, branch, commit and
-  observation time with its own receipt time and the sender. Retrying a
-  head observation preserves its first receipt. A branch that returns
-  to an earlier commit can report a new observation of that commit.
+  For each reported head, the ledger finds the stored observation for
+  the same qualified repository and branch with the latest strictly
+  earlier observation time. If several observations share that earlier
+  time, the highest commit ID sorts first. The ledger skips the head if
+  the commit matches that predecessor. Otherwise it appends the head
+  with its receipt time and sender, including when a branch returns to
+  an earlier commit. Retrying a stored observation with the same
+  qualified repository, branch, commit and observation time preserves
+  the original observation and receipt. Late reports use the same
+  comparison and leave stored observations intact. Inserting a late
+  observation before a stored observation of the same commit can
+  therefore leave consecutive observations of that commit in the history.
 - The heartbeat is the sender, qualified scope and `completed_at`.
   The ledger stores only the latest completion for each sender and
   scope. A request with the same or an older completion for that sender

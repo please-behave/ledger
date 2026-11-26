@@ -238,6 +238,15 @@ impl PlatformSync {
                     head.observed_at
              from jsonb_to_recordset($5) as head(name text, branch text, commit_sha text,
                  committed_at timestamptz, observed_at timestamptz)
+             where head.commit_sha is distinct from (
+                 select previous.commit_sha
+                 from repository_head_observations previous
+                 where (previous.platform, previous.host, previous.owner, previous.name,
+                        previous.branch) = ($1, $2, $3, head.name, head.branch)
+                   and previous.observed_at < head.observed_at
+                 order by previous.observed_at desc, previous.commit_sha desc
+                 limit 1
+             )
              on conflict do nothing",
         )
         .bind(&self.platform)

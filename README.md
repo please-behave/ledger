@@ -25,6 +25,7 @@ The ledger stores its data in PostgreSQL and is configured through environment v
 The ledger accepts attestations with `POST /v0/attestations` and serves them with `GET /v0/attestations`, `GET /v0/attestations/latest` and `GET /v0/attestations/{id}`; the contracts are in [why/contracts](why/contracts).
 
 Trusted collectors send repository inventory, default-branch head observations and sync heartbeats through the ledger's [internal platform sync endpoint](why/contracts/ingest/platform-sync.md).
+The ledger appends a head only when it differs from the nearest stored earlier observation for that repository and branch, or when no earlier observation exists. Exact retries leave the original observation intact.
 
 `GET /v0/repositories/overview` serves repository status, the collector heartbeat and the latest check, release and deployment in one read. See the [repository overview contract](why/contracts/read/repository-overview.md).
 
