@@ -1,0 +1,14 @@
+id: REQ-0055
+name: Deployment Reads with Commit Evidence
+description: >-
+  The ledger must resolve a deployed version through its repository's
+  release fact at read time and use a reported commit directly. For a
+  known commit, it must return the commit and summarize the evidence under
+  REQ-0046 with its overall status and completed Rule Sets, or report
+  that there is no evidence. A version without a release fact must report
+  that the release is not recorded.
+rationale: >-
+  Readers can assess evidence for what is running even when release facts
+  and attestations arrive after deployment reports.
+decisions:
+  - why:DEC-0023

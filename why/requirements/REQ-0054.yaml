@@ -1,0 +1,14 @@
+id: REQ-0054
+name: Paged Current Deployments
+description: >-
+  The ledger must list the current deployment for each target owner, target
+  name and subject repository, optionally restricted to one repository.
+  It must select current events by greatest receipt time and then greatest
+  event ID, and list them in that order with bounded pages and an exclusive
+  cursor. It must return the target identity, subject, reported reference,
+  receipt time, sender and authentication method of each selected event.
+rationale: >-
+  Readers can discover what is running across deployment targets and load
+  the current facts incrementally in a deterministic order.
+decisions:
+  - why:DEC-0023

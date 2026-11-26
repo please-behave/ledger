@@ -32,6 +32,7 @@ pub fn router(pool: PgPool) -> Router {
         .route("/v0/releases", get(release_history))
         .route("/v0/releases/latest", get(latest_releases))
         .route("/v0/releases/detail", get(release_detail))
+        .route("/v0/deployments", get(deployments))
         .route("/v0/rules", get(rules))
         .route("/v0/rules/detail", get(rule_detail))
         .route("/v0/rule-sets", get(rule_sets))
@@ -355,6 +356,28 @@ async fn release_detail(
         .map_err(|error| read_failure(&error))?
         .map(Json)
         .ok_or(StatusCode::NOT_FOUND)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeploymentPage {
+    repository: Option<String>,
+    limit: Option<i64>,
+    before: Option<i64>,
+}
+
+async fn deployments(
+    State(pool): State<PgPool>,
+    Query(page): Query<DeploymentPage>,
+) -> Result<Json<Vec<database::DeploymentSummary>>, StatusCode> {
+    let repository = page.repository.as_deref();
+    if repository.is_some_and(|value| !valid_release_key_part(value))
+        || page.before.is_some_and(|id| id <= 0)
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let limit = page_limit(page.limit)?;
+    paged_response(database::deployment_page(&pool, repository, page.before, limit).await)
 }
 
 fn read_failure(error: &sqlx::Error) -> StatusCode {

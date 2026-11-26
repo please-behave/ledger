@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Current deployments",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["id", "target", "repository", "version", "reported_commit", "commit", "sender", "auth_method", "received_at", "state", "evidence"],
+    "properties": {
+      "id": { "type": "string", "pattern": "^[1-9][0-9]{0,18}$" },
+      "target": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["owner", "name"],
+        "properties": {
+          "owner": { "$ref": "../ingest/deployment-fact.schema.json#/$defs/key" },
+          "name": { "$ref": "../ingest/deployment-fact.schema.json#/properties/target" }
+        }
+      },
+      "repository": { "$ref": "../ingest/deployment-fact.schema.json#/$defs/key" },
+      "sender": { "$ref": "../ingest/deployment-fact.schema.json#/$defs/key" },
+      "auth_method": { "$ref": "../ingest/deployment-fact.schema.json#/properties/auth_method" },
+      "received_at": { "$ref": "attestation.schema.json#/$defs/summary/properties/received_at" },
+      "version": { "anyOf": [{ "type": "null" }, { "$ref": "../ingest/deployment-fact.schema.json#/$defs/key" }] },
+      "reported_commit": { "$ref": "#/$defs/nullable_commit" },
+      "commit": { "$ref": "#/$defs/nullable_commit" },
+      "state": { "type": "string" },
+      "evidence": { "$ref": "releases.schema.json#/$defs/summary/properties/evidence" }
+    },
+    "allOf": [
+      {
+        "oneOf": [
+          { "properties": { "version": { "type": "string" }, "reported_commit": { "type": "null" } } },
+          { "properties": { "version": { "type": "null" }, "reported_commit": { "type": "string" } } }
+        ]
+      },
+      {
+        "oneOf": [
+          { "properties": { "state": { "const": "evidence" }, "commit": { "type": "string" }, "evidence": { "type": "object" } } },
+          { "properties": { "state": { "const": "no_evidence" }, "commit": { "type": "string" }, "evidence": { "type": "null" } } },
+          { "properties": { "state": { "const": "release_not_recorded" }, "version": { "type": "string" }, "commit": { "type": "null" }, "evidence": { "type": "null" } } }
+        ]
+      }
+    ]
+  },
+  "$defs": {
+    "nullable_commit": {
+      "anyOf": [{ "type": "null" }, { "$ref": "../ingest/deployment-fact.schema.json#/properties/commit" }]
+    }
+  }
+}

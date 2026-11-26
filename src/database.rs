@@ -711,7 +711,7 @@ pub(crate) struct CompletedRuleSets {
 }
 
 macro_rules! rule_set_compliance_query {
-    ($binding_filter:literal, $select:literal) => {
+    ($binding_filter:literal, $select:expr) => {
         rule_set_compliance_query!(
             "select distinct on (repository) repository, id, rule_sets
              from attestations
@@ -721,10 +721,10 @@ macro_rules! rule_set_compliance_query {
             $select
         )
     };
-    ($latest_check:literal, $binding_filter:literal, $select:literal) => {
+    ($latest_check:literal, $binding_filter:literal, $select:expr) => {
         rule_set_compliance_query!("", $latest_check, $binding_filter, $select)
     };
-    ($prefix:expr, $latest_check:literal, $binding_filter:literal, $select:literal) => {
+    ($prefix:expr, $latest_check:literal, $binding_filter:literal, $select:expr) => {
         concat!(
             "with ",
             $prefix,
@@ -803,7 +803,7 @@ pub(crate) async fn completed_rule_sets(
 
 // Select one attestation for each requested pair before evaluating its bindings.
 macro_rules! commit_evidence_query {
-    ($prefix:expr, $select:literal) => {
+    ($prefix:expr, $select:expr) => {
         rule_set_compliance_query!(
             $prefix,
             "select k.repository, k.commit_sha, a.*
@@ -903,6 +903,21 @@ pub(crate) async fn release_detail(
     Ok(Some(ReleaseDetail { release, evidence }))
 }
 
+// Both paged reads summarize the same selected attestation (`a`).
+macro_rules! evidence_summary_sql {
+    () => {
+        "case when a.id is not null then json_build_object(
+             'overall', a.overall,
+             'completed_rule_sets', coalesce((
+                 select json_agg(json_build_object(
+                     'source', source, 'path', path, 'id', id, 'version', version, 'name', name
+                 ) order by source, path, id, version)
+                 from compliance where attestation_id = a.id and complete
+             ), '[]'::json)
+         ) end as evidence"
+    };
+}
+
 macro_rules! release_page_query {
     ($candidates:literal) => {
         commit_evidence_query!(
@@ -918,19 +933,12 @@ macro_rules! release_page_query {
                      limit $4
                  ), evidence_keys as (select distinct repository, commit_sha from page), "
             ),
-            r#"select r.repository, r.version, r.commit_sha as commit, r.sender, r.auth_method,
+            concat!(r#"select r.repository, r.version, r.commit_sha as commit, r.sender, r.auth_method,
                       to_char(r.received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as received_at,
-                      case when a.id is not null then json_build_object(
-                          'overall', a.overall,
-                          'completed_rule_sets', coalesce((
-                              select json_agg(json_build_object(
-                                  'source', source, 'path', path, 'id', id, 'version', version, 'name', name
-                              ) order by source, path, id, version)
-                              from compliance where attestation_id = a.id and complete
-                          ), '[]'::json)
-                      ) end as evidence
-               from page r left join latest_check a using (repository, commit_sha)
-               order by r.received_at desc, r.repository desc, r.version desc"#
+                      "#, evidence_summary_sql!(),
+                " from page r left join latest_check a using (repository, commit_sha)
+                  order by r.received_at desc, r.repository desc, r.version desc"
+            )
         )
     };
 }
@@ -969,6 +977,84 @@ pub(crate) async fn release_page(
         .fetch_all(pool)
         .await
         .map(Some)
+}
+
+#[derive(Serialize, FromRow)]
+pub(crate) struct DeploymentSummary {
+    id: String,
+    target: Json<Value>,
+    repository: String,
+    version: Option<String>,
+    reported_commit: Option<String>,
+    commit: Option<String>,
+    received_at: String,
+    sender: String,
+    auth_method: String,
+    state: String,
+    evidence: Option<Json<Value>>,
+}
+
+pub(crate) async fn deployment_page(
+    pool: &PgPool,
+    repository: Option<&str>,
+    before: Option<i64>,
+    limit: i64,
+) -> Result<Option<Vec<DeploymentSummary>>, sqlx::Error> {
+    if let Some(id) = before {
+        let exists: bool = sqlx::query_scalar(
+            "select exists(select from deployment_events
+             where id = $1 and ($2::text is null or repository = $2))",
+        )
+        .bind(id)
+        .bind(repository)
+        .fetch_one(pool)
+        .await?;
+        if !exists {
+            return Ok(None);
+        }
+    }
+
+    // Select current events before the cursor, and resolve only the requested page.
+    sqlx::query_as(commit_evidence_query!(
+        "current_events as (
+             select distinct on (sender, target_name, repository) *
+             from deployment_events
+             where ($1::text is null or repository = $1)
+             order by sender, target_name, repository, received_at desc, id desc
+         ), page as (
+             select * from current_events
+             where ($2::bigint is null or (received_at, id) < (
+                 select received_at, id from deployment_events where id = $2
+             ))
+             order by received_at desc, id desc limit $3
+         ), resolved as (
+             select p.id, p.sender, p.target_name, p.repository, p.version, p.received_at,
+                    p.auth_method, p.commit_sha as reported_commit,
+                    coalesce(p.commit_sha, r.commit_sha) as commit_sha
+             from page p left join release_facts r using (repository, version)
+         ), evidence_keys as (
+             select distinct repository, commit_sha from resolved where commit_sha is not null
+         ), ",
+        concat!(
+            r#"select d.id::text as id, json_build_object('owner', d.sender, 'name', d.target_name) as target,
+                      d.repository, d.version, d.reported_commit, d.commit_sha as commit,
+                      to_char(d.received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as received_at,
+                      d.sender, d.auth_method,
+                      case when d.commit_sha is null then 'release_not_recorded'
+                           when a.id is null then 'no_evidence'
+                           else 'evidence' end as state,
+                      "#,
+            evidence_summary_sql!(),
+            " from resolved d left join latest_check a using (repository, commit_sha)
+              order by d.received_at desc, d.id desc"
+        )
+    ))
+    .bind(repository)
+    .bind(before)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map(Some)
 }
 
 #[derive(Serialize, FromRow)]

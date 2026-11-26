@@ -99,6 +99,26 @@ async fn record_release(address: SocketAddr, repository: &str, version: &str, co
     assert_eq!(status, 201, "{receipt}");
 }
 
+const DEPLOYMENTS: &str = "/v0/deployments";
+
+async fn register_target(address: SocketAddr, sender: &str, target: &str) {
+    let request = json!({"sender": sender, "targets": [{"name": target}]}).to_string();
+    let (status, receipt) =
+        tokio::task::spawn_blocking(move || post(address, "/v0/target-registrations", &request))
+            .await
+            .expect("target registration finishes");
+    assert_eq!(status, 200, "{receipt}");
+}
+
+async fn record_deployment(address: SocketAddr, request: Value) {
+    let (status, receipt) = tokio::task::spawn_blocking(move || {
+        post(address, "/v0/facts/deployments", &request.to_string())
+    })
+    .await
+    .expect("deployment submission finishes");
+    assert_eq!(status, 201, "{receipt}");
+}
+
 async fn register_for_compliance(
     address: SocketAddr,
     route: &'static str,
@@ -145,7 +165,7 @@ fn compliance_evidence(
     report
 }
 
-// REQ-0040, REQ-0041, REQ-0046, REQ-0048: the reads share completeness for check evidence.
+// REQ-0040, REQ-0041, REQ-0046, REQ-0048, REQ-0055: the reads share check evidence.
 #[tokio::test(flavor = "multi_thread")]
 async fn rule_set_compliance_uses_only_the_newest_check_evidence() {
     let postgres = postgres().await;
@@ -293,8 +313,17 @@ async fn rule_set_compliance_uses_only_the_newest_check_evidence() {
              "registered": false, "complete": false, "non_passing_members": []}
         ])
     );
+    register_target(address, "ci", "production").await;
     for repository in ["complete", "incomplete", "unknown"] {
         record_release(address, repository, "v1", COMMIT).await;
+        record_deployment(
+            address,
+            json!({
+                "target": "production", "repository": repository, "version": "v1",
+                "sender": "ci", "auth_method": "api_key"
+            }),
+        )
+        .await;
         let (_, releases) =
             read_json(address, format!("/v0/releases?repository={repository}")).await;
         let (_, release) = read_json(
@@ -318,6 +347,11 @@ async fn rule_set_compliance_uses_only_the_newest_check_evidence() {
             releases[0]["evidence"],
             json!({"overall": release["evidence"]["overall"], "completed_rule_sets": completed})
         );
+        let (status, deployments) =
+            read_json(address, format!("{DEPLOYMENTS}?repository={repository}")).await;
+        assert_eq!(status, 200);
+        assert_eq!(deployments[0]["state"], "evidence");
+        assert_eq!(deployments[0]["evidence"], releases[0]["evidence"]);
     }
     for repository in ["no-longer-bound", "ignored-binding"] {
         assert_eq!(
@@ -545,6 +579,175 @@ async fn release_reads_page_by_receipt_and_show_late_evidence() {
     ] {
         assert_eq!(read_json(address, path.clone()).await.0, 400, "{path}");
     }
+}
+
+// REQ-0019, REQ-0054, REQ-0055: current deployment pages reflect late releases and evidence.
+#[tokio::test(flavor = "multi_thread")]
+async fn deployment_read_pages_current_events_and_resolves_references_at_read_time() {
+    let postgres = postgres().await;
+    let pool = migrated_pool(&postgres).await;
+    let address = start_service(pool.clone()).await;
+    assert_eq!(
+        read_json(address, DEPLOYMENTS.into()).await,
+        (200, json!([]))
+    );
+
+    let repository = "github.com/example/software";
+    let filtered = format!("{DEPLOYMENTS}?repository=github.com%2Fexample%2Fsoftware");
+    register_target(address, "ci-a", "production").await;
+    register_target(address, "ci-b", "production").await;
+    register_target(address, "ci-a", "staging").await;
+    for (owner, target, subject, key, reference) in [
+        ("ci-a", "production", repository, "version", "v2"),
+        ("ci-a", "production", repository, "version", "v1"),
+        ("ci-b", "production", repository, "commit", COMMIT),
+        ("ci-a", "staging", repository, "commit", COMMIT),
+        ("ci-a", "production", "other", "version", "v1"),
+    ] {
+        let mut report = json!({
+            "target": target, "repository": subject, "sender": owner, "auth_method": "api_key"
+        });
+        report[key] = json!(reference);
+        record_deployment(address, report).await;
+    }
+    sqlx::query("update deployment_events set received_at = '2026-11-25T00:00:00Z'")
+        .execute(&pool)
+        .await
+        .expect("tie receipt times");
+
+    // A release of the same version from another repository cannot resolve this one.
+    record_release(address, "other", "v1", COMMIT).await;
+    let mut report = envelope(repository, &["check"], COMMIT, &["FAIL"]);
+    report["attestation"]["overall"] = json!("FAIL");
+    ingest(address, report).await;
+    ingest(address, envelope(repository, &["ci"], COMMIT, &[])).await;
+    let evidence = json!({"overall": "FAIL", "completed_rule_sets": []});
+
+    let (status, list) = read_json(address, filtered.clone()).await;
+    assert_eq!(status, 200);
+    assert_eq!(list.as_array().unwrap().len(), 3);
+    assert_eq!(
+        list[0]["target"],
+        json!({"owner": "ci-a", "name": "staging"})
+    );
+    assert_eq!(
+        list[1]["target"],
+        json!({"owner": "ci-b", "name": "production"})
+    );
+    assert_eq!(list[1]["reported_commit"], COMMIT);
+    assert_eq!(list[1]["version"], Value::Null);
+    assert_eq!(list[1]["commit"], COMMIT);
+    assert_eq!(list[1]["state"], "evidence");
+    assert_eq!(list[1]["evidence"], evidence);
+    let pending = &list[2];
+    assert_eq!(
+        *pending,
+        json!({
+            "id": pending["id"], "target": {"owner": "ci-a", "name": "production"},
+            "repository": repository, "version": "v1", "reported_commit": null, "commit": null,
+            "sender": "ci-a", "auth_method": "api_key", "received_at": "2026-11-25T00:00:00.000000Z",
+            "state": "release_not_recorded", "evidence": null
+        })
+    );
+
+    let (status, first) = read_json(address, format!("{DEPLOYMENTS}?limit=1")).await;
+    assert_eq!(status, 200);
+    assert_eq!(first.as_array().unwrap().len(), 1);
+    assert_eq!(first[0]["repository"], "other");
+    let other_cursor = first[0]["id"].as_str().unwrap();
+    let cursor = list[0]["id"].as_str().unwrap();
+    assert_eq!(
+        read_json(address, format!("{DEPLOYMENTS}?before={other_cursor}")).await,
+        (200, list.clone())
+    );
+    assert_eq!(
+        read_json(address, format!("{filtered}&before={cursor}&limit=2")).await,
+        (200, json!([list[1], pending]))
+    );
+    assert_eq!(
+        read_json(
+            address,
+            format!("{filtered}&before={}", pending["id"].as_str().unwrap())
+        )
+        .await,
+        (200, json!([]))
+    );
+
+    for query in [
+        "limit=0",
+        "limit=201",
+        "limit=1&limit=2",
+        "repository=",
+        "repository=%00",
+        "before=0",
+        "before=invalid",
+        "before=9999",
+        "extra=1",
+    ] {
+        assert_eq!(
+            read_json(address, format!("{DEPLOYMENTS}?{query}")).await.0,
+            400,
+            "{query}"
+        );
+    }
+    assert_eq!(
+        read_json(address, format!("{filtered}&before={other_cursor}"))
+            .await
+            .0,
+        400
+    );
+
+    let released_commit = commit('a');
+    ingest(
+        address,
+        envelope("other", &["check"], &released_commit, &[]),
+    )
+    .await;
+    record_release(address, repository, "v1", &released_commit).await;
+    let mut resolved = pending.clone();
+    resolved["commit"] = json!(released_commit);
+    resolved["state"] = json!("no_evidence");
+    assert_eq!(
+        read_json(
+            address,
+            format!("{filtered}&before={}", list[1]["id"].as_str().unwrap())
+        )
+        .await,
+        (200, json!([resolved]))
+    );
+    ingest(
+        address,
+        envelope(repository, &["check"], &released_commit, &[]),
+    )
+    .await;
+    let (_, updated) = read_json(address, filtered).await;
+    resolved["state"] = json!("evidence");
+    resolved["evidence"] = json!({"overall": "PASS", "completed_rule_sets": []});
+    assert_eq!(updated[2], resolved);
+
+    record_deployment(
+        address,
+        json!({
+            "target": "staging", "repository": repository, "commit": released_commit,
+            "sender": "ci-a", "auth_method": "api_key"
+        }),
+    )
+    .await;
+    assert_eq!(
+        read_json(address, format!("{DEPLOYMENTS}?before={cursor}")).await,
+        (200, json!([list[1], resolved]))
+    );
+    assert_eq!(
+        read_json(address, format!("{DEPLOYMENTS}?before={other_cursor}")).await,
+        (200, json!([list[1], resolved]))
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("select count(*) from deployment_events")
+            .fetch_one(&pool)
+            .await
+            .expect("count deployment events"),
+        6
+    );
 }
 
 // REQ-0015: the newest attestation of every repository and execution points, in a stable order.

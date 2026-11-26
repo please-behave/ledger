@@ -100,3 +100,12 @@ contracts:
     schema: release.schema.json
     requirements:
       - REQ-0048
+  - id: CON-0022
+    name: Current Deployments
+    document: deployments.md
+    schema: deployments.schema.json
+    requirements:
+      - REQ-0019
+      - REQ-0046
+      - REQ-0054
+      - REQ-0055
