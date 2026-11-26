@@ -27,7 +27,17 @@ async fn main() -> Result<()> {
 
 async fn migrate() -> Result<()> {
     let pool = database::connect(&config::database_url()?).await?;
-    database::migrate(&pool).await?;
+    let applied = database::migrate_with_report(&pool).await?;
+    if applied.is_empty() {
+        tracing::info!("the schema is already up to date");
+    }
+    for migration in applied {
+        tracing::info!(
+            version = migration.version,
+            name = %migration.description,
+            "applied migration"
+        );
+    }
     tracing::info!("the migrations are applied");
     Ok(())
 }

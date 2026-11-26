@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_json::value::RawValue;
-use sqlx::migrate::Migrator;
+use sqlx::migrate::{Migrate, Migration, Migrator};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::types::Json;
 use sqlx::{AssertSqlSafe, FromRow, PgPool, Row};
@@ -43,6 +43,44 @@ pub async fn migrate(pool: &PgPool) -> Result<()> {
         .run(pool)
         .await
         .context("cannot apply the migrations")
+}
+
+pub async fn migrate_with_report(pool: &PgPool) -> Result<Vec<&'static Migration>> {
+    let mut connection = pool
+        .acquire()
+        .await
+        .context("cannot acquire a migration connection")?;
+    // Hold SQLx's session lock across both reads so concurrent runs cannot claim the same versions.
+    connection.close_on_drop();
+    connection
+        .lock()
+        .await
+        .context("cannot lock the database for migration")?;
+
+    let applied_versions =
+        || sqlx::query_scalar::<_, i64>("select version from _sqlx_migrations where success");
+    let before = match applied_versions().fetch_all(&mut *connection).await {
+        Err(sqlx::Error::Database(error)) if error.code().as_deref() == Some("42P01") => Vec::new(),
+        result => result.context("cannot read applied versions before migration")?,
+    };
+
+    MIGRATOR
+        .run(&mut *connection)
+        .await
+        .context("cannot apply the migrations")?;
+
+    let after = applied_versions()
+        .fetch_all(&mut *connection)
+        .await
+        .context("cannot read applied versions after migration")?;
+    Ok(MIGRATOR
+        .iter()
+        .filter(|migration| {
+            migration.migration_type.is_up_migration()
+                && after.contains(&migration.version)
+                && !before.contains(&migration.version)
+        })
+        .collect())
 }
 
 pub async fn schema_ready(pool: &PgPool) -> bool {

@@ -2,10 +2,13 @@ id: REQ-0002
 name: Idempotent Migration
 description: >-
   The `migrate` subcommand must create the complete schema on an empty
-  database and succeed without further change when run again.
+  database and succeed without further change when run again. On success it
+  must log the version and name of each migration it applied or report that
+  the schema is already up to date when it applied none.
 rationale: >-
   A deployment can run the migration on every release without knowing whether
-  an earlier run already applied it.
+  an earlier run already applied it. The output tells operators whether a
+  release changed the schema.
 decisions:
   - DEC-0001
   - DEC-0003

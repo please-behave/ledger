@@ -17,7 +17,7 @@ The ledger stores its data in PostgreSQL and is configured through environment v
 | `LEDGER_DATABASE_URL` | PostgreSQL connection URL. Required. |
 | `LEDGER_LISTEN_ADDRESS` | Address to listen on. Defaults to `0.0.0.0:8080`. |
 
-`ledger migrate` applies the embedded migrations and exits. Starting `ledger` never migrates. `GET /healthz` answers while the process runs, and `GET /readyz` answers only when the database is reachable and has the schema this build requires.
+`ledger migrate` applies the embedded migrations and logs each applied migration's version and name. If it applies none, it logs that the schema is already up to date. Starting `ledger` never migrates. `GET /healthz` answers while the process runs, and `GET /readyz` answers only when the database is reachable and has the schema this build requires.
 
 The ledger accepts attestations with `POST /v0/attestations` and serves them with `GET /v0/attestations`, `GET /v0/attestations/latest` and `GET /v0/attestations/{id}`; the contracts are in [why/contracts](why/contracts).
 
