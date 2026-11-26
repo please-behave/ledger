@@ -1,0 +1,15 @@
+id: REQ-0057
+name: Reconcile Repository Inventory and Sync Heartbeats
+description: >-
+  The ledger must keep one inventory row per repository, using the normalized
+  identity of attestations qualified by platform and host. It must store the
+  latest reported attributes and sender, first and last sightings, and mark
+  repositories omitted from a completed scope gone at that sync's time.
+  A new sighting restores the repository. The ledger must retain the row
+  and keep the latest completed heartbeat for each sender and scope.
+rationale: >-
+  A complete inventory makes repositories visible even before they send check
+  evidence, and scoped heartbeats distinguish completed reads from gaps.
+decisions:
+  - why:DEC-0010
+  - why:DEC-0024

@@ -3,6 +3,7 @@ pub mod config;
 pub mod database;
 mod deployment_fact;
 pub mod http;
+mod platform_facts;
 mod registration;
 mod release_fact;
 pub mod rule_digest;

@@ -54,3 +54,11 @@ contracts:
     requirements:
       - REQ-0052
       - REQ-0053
+  - id: CON-0023
+    name: Platform Sync
+    document: platform-sync.md
+    schema: platform-sync.schema.json
+    requirements:
+      - REQ-0056
+      - REQ-0057
+      - REQ-0058

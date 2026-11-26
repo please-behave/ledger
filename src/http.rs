@@ -1,6 +1,7 @@
 use crate::attestation::{Envelope, valid_commit, valid_rule_identity, valid_version};
 use crate::database;
 use crate::deployment_fact::{DeploymentFact, DeploymentOutcome};
+use crate::platform_facts::PlatformSync;
 use crate::registration::{JsonObject, Outcome, OutcomeKind, RegistrationRequest};
 use crate::release_fact::{ReleaseFact, valid_release_key_part};
 use crate::rule_set_registration::{RuleSetRequest, SetOutcome};
@@ -20,6 +21,7 @@ use uuid::Uuid;
 const DEFAULT_PAGE_SIZE: i64 = 100;
 const MAX_PAGE_SIZE: i64 = 200;
 const MAX_INGEST_BODY_BYTES: usize = 2 * 1024 * 1024;
+const MAX_PLATFORM_SYNC_BYTES: usize = 16 * 1024 * 1024;
 
 pub fn router(pool: PgPool) -> Router {
     Router::new()
@@ -61,6 +63,10 @@ pub fn router(pool: PgPool) -> Router {
         .route(
             "/v0/facts/deployments",
             post(record_deployment).layer(DefaultBodyLimit::max(MAX_INGEST_BODY_BYTES)),
+        )
+        .route(
+            "/v0/facts/platform-syncs",
+            post(record_platform_sync).layer(DefaultBodyLimit::max(MAX_PLATFORM_SYNC_BYTES)),
         )
         .with_state(pool)
 }
@@ -131,6 +137,18 @@ async fn record_deployment(
         DeploymentOutcome::Unchanged => StatusCode::OK,
     };
     Ok((status, Json(json!({ "outcome": outcome }))))
+}
+
+async fn record_platform_sync(
+    State(pool): State<PgPool>,
+    body: Bytes,
+) -> Result<StatusCode, StatusCode> {
+    let sync = PlatformSync::parse(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    sync.store(&pool).await.map_err(|error| {
+        tracing::error!(%error, "cannot store the platform sync");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(serde::Serialize)]

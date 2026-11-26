@@ -8,13 +8,14 @@ license = "PolyForm-Noncommercial-1.0.0"
 [dependencies]
 anyhow = "1.0.104"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio"] }
+chrono = { version = "0.4.45", default-features = false, features = ["serde", "std"] }
 clap = { version = "4.6.9", features = ["derive"] }
 form_urlencoded = "1.2.2"
 jsonschema = { version = "0.61.2", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 sha2 = "0.10.9"
-sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "migrate", "macros", "json", "uuid"] }
+sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "migrate", "macros", "json", "uuid", "chrono"] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["json"] }

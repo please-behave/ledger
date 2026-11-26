@@ -1,0 +1,12 @@
+id: REQ-0058
+name: Append Distinct Repository Head Observations
+description: >-
+  The ledger must append each distinct default-branch head observation,
+  recording the qualified repository, branch, full commit ID, commit time,
+  observation time, ledger receipt time and sender. Retries must preserve the
+  original observation and receipt time.
+rationale: >-
+  Observations identify which platform heads can be compared with received
+  evidence, while repeated delivery leaves that history intact.
+decisions:
+  - why:DEC-0024

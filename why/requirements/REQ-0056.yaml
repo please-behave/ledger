@@ -1,0 +1,12 @@
+id: REQ-0056
+name: Validate Internal Platform Syncs
+description: >-
+  The ledger must accept complete platform syncs from trusted collectors
+  through its versioned internal ingest contract. It must reject invalid
+  submissions atomically. The gateway must not forward the route.
+rationale: >-
+  Platform facts come from collectors within the private network. Missing
+  repositories can be inferred only from a complete and valid snapshot.
+decisions:
+  - why:DEC-0007
+  - why:DEC-0024
