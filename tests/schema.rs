@@ -94,6 +94,7 @@ async fn migrate_creates_the_schema_and_is_idempotent() {
     assert!(exists(&pool, "rule_registrations").await);
     assert!(exists(&pool, "rule_set_registrations").await);
     assert!(exists(&pool, "release_facts").await);
+    assert!(exists(&pool, "deployment_targets").await);
     for index in [
         "attestations_latest_idx",
         "attestations_repository_commit_idx",
@@ -479,6 +480,85 @@ async fn release_fact_migration_preserves_attestations_and_keys_releases_by_repo
         .fetch_one(&pool)
         .await
         .expect("count attestations after storing the release facts");
+    assert_eq!(attestation_count, 2);
+}
+
+#[tokio::test]
+async fn deployment_target_migration_preserves_attestations_and_keys_targets_by_owner() {
+    const MIGRATIONS: Migrator = sqlx::migrate!();
+    const PRE_TARGET_SCHEMA: i64 = 20261125000002;
+    const OWNER: &str = "github.com/owner/project";
+    const NAME: &str = "production.eu-west_1";
+    const DESCRIPTION: &str = "Production in Europe";
+
+    let database = postgres().await;
+    let pool = ledger::database::connect(&database.url)
+        .await
+        .expect("connect");
+    MIGRATIONS
+        .run_to(PRE_TARGET_SCHEMA, &pool)
+        .await
+        .expect("apply the preceding schema");
+    insert_attestation(&pool, &[])
+        .await
+        .expect("insert an existing attestation");
+    assert!(!exists(&pool, "deployment_targets").await);
+
+    ledger::database::migrate(&pool)
+        .await
+        .expect("add deployment target storage");
+    insert_attestation(&pool, &[("id", OTHER_ID)])
+        .await
+        .expect("insert an attestation through the old columns");
+
+    let insert_target = |owner: &str, name: &str, description: Option<&str>| {
+        sqlx::query("insert into deployment_targets (owner, name, description) values ($1, $2, $3)")
+            .bind(owner.to_owned())
+            .bind(name.to_owned())
+            .bind(description.map(str::to_owned))
+            .execute(&pool)
+    };
+    insert_target(OWNER, NAME, Some(DESCRIPTION))
+        .await
+        .expect("store a target with a description");
+    insert_target("deployment-ci", NAME, None)
+        .await
+        .expect("store the same name for another owner without a description");
+    let duplicate = insert_target(OWNER, NAME, Some("Different description"))
+        .await
+        .expect_err("the owner and name identify one target");
+    assert!(matches!(duplicate, sqlx::Error::Database(error) if error.is_unique_violation()));
+
+    let long_name = "x".repeat(65);
+    let long_description = "é".repeat(513);
+    for (owner, name, description) in [
+        ("", "valid", None),
+        (OWNER, "", None),
+        (OWNER, "-production", None),
+        (OWNER, "production west", None),
+        (OWNER, &long_name, None),
+        (OWNER, "valid", Some("")),
+        (OWNER, "valid", Some(long_description.as_str())),
+    ] {
+        let invalid = insert_target(owner, name, description)
+            .await
+            .expect_err("invalid targets violate a constraint");
+        assert!(matches!(invalid, sqlx::Error::Database(error) if error.is_check_violation()));
+    }
+
+    let description: String = sqlx::query_scalar(
+        "select description from deployment_targets where owner = $1 and name = $2",
+    )
+    .bind(OWNER)
+    .bind(NAME)
+    .fetch_one(&pool)
+    .await
+    .expect("read the first target description");
+    assert_eq!(description, DESCRIPTION);
+    let attestation_count: i64 = sqlx::query_scalar("select count(*) from attestations")
+        .fetch_one(&pool)
+        .await
+        .expect("count attestations after storing deployment targets");
     assert_eq!(attestation_count, 2);
 }
 
