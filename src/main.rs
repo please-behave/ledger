@@ -45,9 +45,12 @@ async fn migrate() -> Result<()> {
 async fn serve() -> Result<()> {
     let pool = database::connect_lazily(&config::database_url()?)?;
     let address = config::listen_address()?;
+    let overview = config::OverviewConfig::from_env()?;
     let listener = TcpListener::bind(address)
         .await
         .with_context(|| format!("cannot listen on {address}"))?;
     tracing::info!(%address, "the ledger is listening");
-    http::run(listener, pool).await.context("the server failed")
+    http::run_with_overview_config(listener, pool, overview)
+        .await
+        .context("the server failed")
 }

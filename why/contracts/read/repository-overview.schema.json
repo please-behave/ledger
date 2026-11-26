@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Repository overview",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["heartbeat", "repositories"],
+  "properties": {
+    "heartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["completed_at", "stale"],
+      "properties": {
+        "completed_at": { "$ref": "#/$defs/optional_timestamp" },
+        "stale": { "type": "boolean" }
+      }
+    },
+    "repositories": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/repository" }
+    }
+  },
+  "$defs": {
+    "timestamp": { "type": "string", "format": "date-time" },
+    "optional_timestamp": { "type": ["string", "null"], "format": "date-time" },
+    "commit": { "type": "string", "pattern": "^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$" },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository", "platform", "managed", "state", "status_token",
+        "heartbeat_completed_at", "latest_check", "head", "pending_since",
+        "pending_age_seconds", "overdue_step", "overdue_steps",
+        "observed_heads_since_evidence", "last_evidence_at", "latest_release", "latest_deployment"
+      ],
+      "properties": {
+        "repository": { "type": "string" },
+        "platform": { "type": ["string", "null"] },
+        "managed": { "type": "boolean" },
+        "state": { "enum": ["unknown", "never_integrated", "current", "pending", "overdue"] },
+        "status_token": {
+          "enum": ["status-not-run", "status-failed", "status-passed", "status-allowed", "status-warning"]
+        },
+        "heartbeat_completed_at": { "$ref": "#/$defs/optional_timestamp" },
+        "latest_check": { "anyOf": [{ "$ref": "#/$defs/check" }, { "type": "null" }] },
+        "head": { "anyOf": [{ "$ref": "#/$defs/head" }, { "type": "null" }] },
+        "pending_since": { "$ref": "#/$defs/optional_timestamp" },
+        "pending_age_seconds": { "type": ["integer", "null"], "minimum": 0 },
+        "overdue_step": { "type": ["integer", "null"], "minimum": 1 },
+        "overdue_steps": { "type": ["integer", "null"], "minimum": 1 },
+        "observed_heads_since_evidence": { "type": "integer", "minimum": 0 },
+        "last_evidence_at": { "$ref": "#/$defs/optional_timestamp" },
+        "latest_release": { "anyOf": [{ "$ref": "#/$defs/release" }, { "type": "null" }] },
+        "latest_deployment": { "anyOf": [{ "$ref": "#/$defs/deployment" }, { "type": "null" }] }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "commit", "overall", "received_at"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "commit": { "$ref": "#/$defs/commit" },
+        "overall": { "enum": ["PASS", "FAIL", "ERROR"] },
+        "received_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "head": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branch", "commit", "committed_at", "observed_at", "direct_evidence"],
+      "properties": {
+        "branch": { "type": "string" },
+        "commit": { "$ref": "#/$defs/commit" },
+        "committed_at": { "$ref": "#/$defs/timestamp" },
+        "observed_at": { "$ref": "#/$defs/timestamp" },
+        "direct_evidence": { "type": "boolean" }
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "commit", "received_at"],
+      "properties": {
+        "version": { "type": "string" },
+        "commit": { "$ref": "#/$defs/commit" },
+        "received_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "name", "received_at"],
+      "properties": {
+        "owner": { "type": "string" },
+        "name": { "type": "string" },
+        "received_at": { "$ref": "#/$defs/timestamp" }
+      }
+    }
+  }
+}

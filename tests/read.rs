@@ -1262,3 +1262,336 @@ async fn history_rejects_invalid_paging_parameters() {
         assert_eq!(status, 400, "{query}");
     }
 }
+
+const OVERVIEW: &str = "/v0/repositories/overview";
+
+async fn overview(address: SocketAddr) -> Value {
+    let (status, body) = read(address, OVERVIEW).await;
+    assert_eq!(status, 200, "{body}");
+    let response: Value = serde_json::from_str(&body).expect("overview JSON");
+    let schema = serde_json::from_str(include_str!(
+        "../why/contracts/read/repository-overview.schema.json"
+    ))
+    .unwrap();
+    let validator = jsonschema::options()
+        .should_validate_formats(true)
+        .build(&schema)
+        .unwrap();
+    assert!(validator.is_valid(&response), "{response}");
+    response
+}
+
+fn overview_entry<'a>(response: &'a Value, repository: &str) -> &'a Value {
+    response["repositories"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["repository"] == repository)
+        .unwrap_or_else(|| panic!("missing {repository} from {response}"))
+}
+
+async fn sync_at(
+    address: SocketAddr,
+    scope: &str,
+    completed_at: chrono::DateTime<chrono::Utc>,
+    inventory: &[(&str, bool)],
+    heads: &[Value],
+) {
+    let inventory: Vec<_> = inventory
+        .iter()
+        .map(|(name, archived)| {
+            json!({
+                "name": name, "default_branch": "main", "archived": archived, "fork": false,
+                "last_activity_at": null
+            })
+        })
+        .collect();
+    let request = json!({
+        "sender": "github-collector", "platform": "github", "host": "github.com", "scope": scope,
+        "completed_at": completed_at, "inventory": inventory, "heads": heads
+    });
+    let (status, body) = tokio::task::spawn_blocking(move || {
+        post(address, "/v0/facts/platform-syncs", &request.to_string())
+    })
+    .await
+    .unwrap();
+    assert_eq!(status, 204, "{body}");
+}
+
+fn observed(name: &str, commit: &str, at: chrono::DateTime<chrono::Utc>) -> Value {
+    json!({
+        "name": name, "branch": "main", "commit_sha": commit,
+        "committed_at": at, "observed_at": at
+    })
+}
+
+fn assert_state(entry: &Value, state: &str, token: &str) {
+    assert_eq!(entry["state"], state, "{entry}");
+    assert_eq!(entry["status_token"], token, "{entry}");
+}
+
+async fn database_now(pool: &PgPool) -> chrono::DateTime<chrono::Utc> {
+    sqlx::query_scalar("select date_trunc('second', statement_timestamp())")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+// REQ-0059, REQ-0060: one read includes only applicable repositories and scopes,
+// and selects the newest reports independently of the state of observed-head evidence.
+#[tokio::test]
+async fn repository_overview_selects_reports_and_uses_covering_heartbeats() {
+    use chrono::TimeDelta;
+
+    let postgres = postgres().await;
+    let pool = migrated_pool(&postgres).await;
+    let address = start_service(pool.clone()).await;
+    assert_eq!(
+        overview(address).await,
+        json!({"heartbeat": {"completed_at": null, "stale": true}, "repositories": []})
+    );
+
+    let now = database_now(&pool).await;
+    let stale = now - TimeDelta::hours(2);
+    let owner_wide = now - TimeDelta::minutes(15);
+    let specific = now - TimeDelta::minutes(5);
+    let current = "github.com/owner/current";
+    let unobserved = "github.com/owner/unobserved";
+    let archived = "github.com/owner/archived";
+    let no_check = "github.com/owner/no-check";
+    let unmanaged = "github.com/owner/unmanaged";
+    let stale_repository = "github.com/stale/empty";
+    let head = observed("current", COMMIT, owner_wide);
+    let mut check = envelope(current, &["check", "ci"], COMMIT, &["FAIL"]);
+    check["attestation"]["overall"] = json!("FAIL");
+    let before = ingest(address, check).await;
+    ingest(address, envelope(archived, &["check"], COMMIT, &[])).await;
+    ingest(address, envelope(unobserved, &["check"], COMMIT, &[])).await;
+    ingest(address, envelope(no_check, &["ci"], COMMIT, &[])).await;
+    ingest(address, envelope(unmanaged, &["check"], COMMIT, &[])).await;
+
+    sync_at(address, "stale/*", stale, &[("empty", false)], &[]).await;
+    assert_state(
+        overview_entry(&overview(address).await, stale_repository),
+        "unknown",
+        "status-not-run",
+    );
+    sync_at(
+        address,
+        "owner/*",
+        owner_wide,
+        &[
+            ("current", false),
+            ("unobserved", false),
+            ("no-check", false),
+            ("never", false),
+            ("archived", true),
+        ],
+        &[head],
+    )
+    .await;
+    sync_at(
+        address,
+        "owner/current",
+        specific,
+        &[("current", false)],
+        &[],
+    )
+    .await;
+    sync_at(address, "owner/archived", stale, &[("archived", true)], &[]).await;
+    sync_at(address, "unrelated/*", now, &[], &[]).await;
+
+    record_release(address, current, "z", COMMIT).await;
+    record_release(address, current, "a", &commit('2')).await;
+    register_target(address, "deployer", "staging").await;
+    register_target(address, "infra", "production").await;
+    for (sender, target, repository) in [
+        ("deployer", "staging", current),
+        ("infra", "production", current),
+        ("deployer", "staging", "github.com/owner/fact-only"),
+    ] {
+        record_deployment(
+            address,
+            json!({
+                "sender": sender, "auth_method": "api_key", "target": target,
+                "repository": repository, "commit": COMMIT
+            }),
+        )
+        .await;
+    }
+    sqlx::query("update release_facts set received_at = $1")
+        .bind(owner_wide)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("update deployment_events set received_at = $1")
+        .bind(specific)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let response = overview(address).await;
+    assert_eq!(
+        response["heartbeat"],
+        json!({"completed_at": stale, "stale": true})
+    );
+    let names: Vec<_> = response["repositories"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["repository"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            current,
+            "github.com/owner/never",
+            no_check,
+            unmanaged,
+            unobserved,
+            stale_repository
+        ]
+    );
+
+    let entry = overview_entry(&response, current);
+    assert_state(entry, "current", "status-passed");
+    assert_eq!(entry["heartbeat_completed_at"], json!(specific));
+    assert_eq!(entry["head"]["direct_evidence"], true);
+    assert_eq!(entry["latest_check"]["id"], before);
+    assert_eq!(entry["latest_check"]["overall"], "FAIL");
+    assert_eq!(entry["observed_heads_since_evidence"], 0);
+    assert_eq!(
+        entry["last_evidence_at"],
+        entry["latest_check"]["received_at"]
+    );
+    assert_eq!(
+        entry["latest_release"],
+        json!({"version": "z", "commit": COMMIT, "received_at": owner_wide})
+    );
+    assert_eq!(
+        entry["latest_deployment"],
+        json!({"owner": "infra", "name": "production", "received_at": specific})
+    );
+
+    let entry = overview_entry(&response, no_check);
+    assert_state(entry, "never_integrated", "status-failed");
+    assert_eq!(entry["heartbeat_completed_at"], json!(owner_wide));
+    for field in [
+        "head",
+        "latest_check",
+        "last_evidence_at",
+        "latest_release",
+        "latest_deployment",
+    ] {
+        assert_eq!(entry[field], Value::Null, "{field}");
+    }
+    assert_state(
+        overview_entry(&response, "github.com/owner/never"),
+        "never_integrated",
+        "status-failed",
+    );
+    assert_state(
+        overview_entry(&response, unobserved),
+        "unknown",
+        "status-not-run",
+    );
+    let entry = overview_entry(&response, unmanaged);
+    assert_state(entry, "unknown", "status-not-run");
+    assert_eq!(entry["managed"], false);
+    assert_eq!(entry["platform"], Value::Null);
+    assert_eq!(entry["heartbeat_completed_at"], Value::Null);
+    assert_eq!(entry["latest_check"]["commit"], COMMIT);
+    let entry = overview_entry(&response, stale_repository);
+    assert_state(entry, "unknown", "status-not-run");
+    assert_eq!(entry["heartbeat_completed_at"], json!(stale));
+
+    let stored: (bool, i64) = sqlx::query_as(
+        "select archived, (select count(*) from attestations a where a.repository = i.repository)
+         from repository_inventory i where i.repository = $1",
+    )
+    .bind(archived)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(stored, (true, 1));
+}
+
+// REQ-0060: pending starts at the first uncovered observation, overdue advances
+// with elapsed time, and a late check changes evidence for its exact observed head.
+#[tokio::test]
+async fn repository_overview_derives_pending_and_overdue_from_observation_time() {
+    use chrono::TimeDelta;
+
+    let postgres = postgres().await;
+    let pool = migrated_pool(&postgres).await;
+    let address = start_service(pool.clone()).await;
+    let now = database_now(&pool).await;
+    let first = now - TimeDelta::days(4);
+    let covered = now - TimeDelta::minutes(30);
+    let pending = now - TimeDelta::minutes(10);
+    let one = commit('1');
+    let two = commit('2');
+    let three = commit('3');
+    let repositories = [("late", false), ("old", false)];
+    let late = "github.com/owner/late";
+    let old = "github.com/owner/old";
+    ingest(address, envelope(old, &["check"], COMMIT, &[])).await;
+    sync_at(
+        address,
+        "owner/*",
+        first,
+        &repositories,
+        &[observed("old", &one, first), observed("late", &one, first)],
+    )
+    .await;
+    sync_at(
+        address,
+        "owner/*",
+        covered,
+        &repositories,
+        &[observed("late", &two, covered)],
+    )
+    .await;
+    sync_at(
+        address,
+        "owner/*",
+        pending,
+        &repositories,
+        &[observed("late", &three, pending)],
+    )
+    .await;
+
+    // Late evidence on an older observed head moves the start of the gap forward.
+    ingest(address, envelope(late, &["check"], &two, &[])).await;
+    ingest(address, envelope(late, &["ci"], &three, &[])).await;
+    let response = overview(address).await;
+    assert_eq!(
+        response["heartbeat"],
+        json!({"completed_at": pending, "stale": false})
+    );
+    let entry = overview_entry(&response, late);
+    assert_state(entry, "pending", "status-allowed");
+    assert_eq!(entry["pending_since"], json!(pending));
+    assert_eq!(entry["head"]["direct_evidence"], false);
+    assert_eq!(entry["observed_heads_since_evidence"], 1);
+    assert_eq!(entry["overdue_steps"], Value::Null);
+    assert!(entry["pending_age_seconds"].as_i64().unwrap() >= 600);
+    let entry = overview_entry(&response, old);
+    assert_state(entry, "overdue", "status-warning");
+    assert_eq!(entry["pending_since"], json!(first));
+    assert_eq!(entry["observed_heads_since_evidence"], 1);
+    assert_eq!(entry["overdue_step"], 3);
+    assert_eq!(entry["overdue_steps"], 4);
+
+    let exact = ingest(address, envelope(late, &["check"], &three, &[])).await;
+    let newest = ingest(address, envelope(late, &["check"], COMMIT, &[])).await;
+    let response = overview(address).await;
+    let entry = overview_entry(&response, late);
+    assert_state(entry, "current", "status-passed");
+    assert_eq!(entry["head"]["direct_evidence"], true);
+    assert_eq!(entry["observed_heads_since_evidence"], 0);
+    assert_eq!(entry["pending_since"], Value::Null);
+    assert_ne!(exact, newest);
+    assert_eq!(entry["latest_check"]["id"], newest);
+    assert_eq!(entry["latest_check"]["commit"], COMMIT);
+}

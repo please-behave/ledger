@@ -1,0 +1,16 @@
+id: REQ-0059
+name: Read the Repository Overview
+description: >-
+  The ledger must serve one overview entry per non-archived inventory
+  repository and one unmanaged entry per attestation repository absent
+  from inventory, with its latest check verdict, release and deployment
+  as a subject where available.
+rationale: >-
+  One read lets consumers see the inventory and latest reports across
+  repositories, including repositories that have never reported.
+decisions:
+  - why:DEC-0020
+  - why:DEC-0021
+  - why:DEC-0023
+  - why:DEC-0024
+  - why:DEC-0025

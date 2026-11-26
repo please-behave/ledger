@@ -109,3 +109,11 @@ contracts:
       - REQ-0046
       - REQ-0054
       - REQ-0055
+  - id: CON-0024
+    name: Repository Overview
+    document: repository-overview.md
+    schema: repository-overview.schema.json
+    requirements:
+      - REQ-0019
+      - REQ-0059
+      - REQ-0060

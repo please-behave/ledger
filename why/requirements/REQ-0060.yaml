@@ -1,0 +1,14 @@
+id: REQ-0060
+name: Derive Repository Status on Read
+description: >-
+  The ledger must derive repository status on read from covering sync
+  heartbeats, sampled default-branch heads and check evidence for those
+  commits, with configurable heartbeat staleness, grace period and
+  overdue steps. The overview must expose the covering completion time
+  per repository and the oldest of those times in the heartbeat summary.
+rationale: >-
+  Computing status from recorded facts keeps it accurate when observations
+  and attestations arrive in either order.
+decisions:
+  - why:DEC-0021
+  - why:DEC-0024

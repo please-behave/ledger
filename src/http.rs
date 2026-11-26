@@ -1,16 +1,18 @@
 use crate::attestation::{Envelope, valid_commit, valid_rule_identity, valid_version};
+use crate::config::OverviewConfig;
 use crate::database;
 use crate::deployment_fact::{DeploymentFact, DeploymentOutcome};
 use crate::platform_facts::PlatformSync;
 use crate::registration::{JsonObject, Outcome, OutcomeKind, RegistrationRequest};
 use crate::release_fact::{ReleaseFact, valid_release_key_part};
+use crate::repository_overview::{self, RepositoryOverview};
 use crate::rule_set_registration::{RuleSetRequest, SetOutcome};
 use crate::target_registration::{TargetOutcome, TargetRequest};
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path, Query, RawQuery, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
-use axum::{Json, Router, serve};
+use axum::{Extension, Json, Router, serve};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -24,6 +26,10 @@ const MAX_INGEST_BODY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_PLATFORM_SYNC_BYTES: usize = 16 * 1024 * 1024;
 
 pub fn router(pool: PgPool) -> Router {
+    router_with_overview_config(pool, OverviewConfig::default())
+}
+
+fn router_with_overview_config(pool: PgPool, config: OverviewConfig) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
@@ -31,6 +37,10 @@ pub fn router(pool: PgPool) -> Router {
         .route("/v0/attestations/latest", get(latest))
         .route("/v0/attestations/{id}", get(read))
         .route("/v0/repositories/commit-evidence", get(commit_evidence))
+        .route(
+            "/v0/repositories/overview",
+            get(repository_overview).layer(Extension(config)),
+        )
         .route("/v0/releases", get(release_history))
         .route("/v0/releases/latest", get(latest_releases))
         .route("/v0/releases/detail", get(release_detail))
@@ -72,7 +82,15 @@ pub fn router(pool: PgPool) -> Router {
 }
 
 pub async fn run(listener: TcpListener, pool: PgPool) -> std::io::Result<()> {
-    serve(listener, router(pool))
+    run_with_overview_config(listener, pool, OverviewConfig::default()).await
+}
+
+pub async fn run_with_overview_config(
+    listener: TcpListener,
+    pool: PgPool,
+    config: OverviewConfig,
+) -> std::io::Result<()> {
+    serve(listener, router_with_overview_config(pool, config))
         .with_graceful_shutdown(shutdown_signal())
         .await
 }
@@ -272,6 +290,16 @@ async fn read(
         Ok(None) => Err(StatusCode::NOT_FOUND),
         Err(error) => Err(read_failure(&error)),
     }
+}
+
+async fn repository_overview(
+    State(pool): State<PgPool>,
+    Extension(config): Extension<OverviewConfig>,
+) -> Result<Json<RepositoryOverview>, StatusCode> {
+    repository_overview::read(&pool, &config)
+        .await
+        .map(Json)
+        .map_err(|error| read_failure(&error))
 }
 
 #[derive(Deserialize)]

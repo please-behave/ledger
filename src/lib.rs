@@ -6,6 +6,7 @@ pub mod http;
 mod platform_facts;
 mod registration;
 mod release_fact;
+mod repository_overview;
 pub mod rule_digest;
 mod rule_set_registration;
 mod target_registration;
