@@ -1,5 +1,6 @@
 use crate::attestation::{Envelope, valid_commit, valid_rule_identity, valid_version};
 use crate::database;
+use crate::deployment_fact::{DeploymentFact, DeploymentOutcome};
 use crate::registration::{JsonObject, Outcome, OutcomeKind, RegistrationRequest};
 use crate::release_fact::{ReleaseFact, valid_release_key_part};
 use crate::rule_set_registration::{RuleSetRequest, SetOutcome};
@@ -56,6 +57,10 @@ pub fn router(pool: PgPool) -> Router {
             "/v0/facts/releases",
             post(record_release).layer(DefaultBodyLimit::max(MAX_INGEST_BODY_BYTES)),
         )
+        .route(
+            "/v0/facts/deployments",
+            post(record_deployment).layer(DefaultBodyLimit::max(MAX_INGEST_BODY_BYTES)),
+        )
         .with_state(pool)
 }
 
@@ -104,6 +109,25 @@ async fn record_release(
         OutcomeKind::Created => StatusCode::CREATED,
         OutcomeKind::Unchanged => StatusCode::OK,
         OutcomeKind::Conflict => StatusCode::CONFLICT,
+    };
+    Ok((status, Json(json!({ "outcome": outcome }))))
+}
+
+async fn record_deployment(
+    State(pool): State<PgPool>,
+    body: Bytes,
+) -> Result<(StatusCode, Json<Value>), StatusCode> {
+    let fact = DeploymentFact::parse(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let outcome = database::record_deployment(&pool, &fact)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, "cannot store the deployment fact");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    let status = match outcome {
+        DeploymentOutcome::Created => StatusCode::CREATED,
+        DeploymentOutcome::Unchanged => StatusCode::OK,
     };
     Ok((status, Json(json!({ "outcome": outcome }))))
 }

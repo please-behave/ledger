@@ -1,4 +1,5 @@
 use crate::attestation::Envelope;
+use crate::deployment_fact::{DeploymentFact, DeploymentOutcome};
 use crate::registration::{Outcome, OutcomeKind, Rule};
 use crate::release_fact::ReleaseFact;
 use crate::rule_digest::sha256_digest;
@@ -141,6 +142,65 @@ pub(crate) async fn record_release(
     } else {
         OutcomeKind::Conflict
     })
+}
+
+pub(crate) async fn record_deployment(
+    pool: &PgPool,
+    fact: &DeploymentFact,
+) -> Result<Option<DeploymentOutcome>, sqlx::Error> {
+    let mut transaction = pool
+        .begin_with("BEGIN ISOLATION LEVEL READ COMMITTED")
+        .await?;
+    // Lock the target, then read a fresh snapshot to see any report that held the lock first.
+    let target: Option<bool> = sqlx::query_scalar(
+        "select true from deployment_targets where owner = $1 and name = $2 for no key update",
+    )
+    .bind(&fact.sender)
+    .bind(&fact.target)
+    .fetch_optional(&mut *transaction)
+    .await?;
+    if target.is_none() {
+        return Ok(None);
+    }
+
+    let current: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+        "select version, commit_sha from deployment_events
+         where sender = $1 and target_name = $2 and repository = $3
+         order by received_at desc, id desc limit 1",
+    )
+    .bind(&fact.sender)
+    .bind(&fact.target)
+    .bind(&fact.repository)
+    .fetch_optional(&mut *transaction)
+    .await?;
+    let unchanged = current.is_some_and(|(version, commit)| match (version, commit) {
+        (Some(version), _) => fact.version.as_deref() == Some(version.as_str()),
+        (_, Some(commit)) => fact
+            .commit
+            .as_ref()
+            .is_some_and(|reported| reported.eq_ignore_ascii_case(&commit)),
+        _ => false,
+    });
+    let outcome = if unchanged {
+        DeploymentOutcome::Unchanged
+    } else {
+        sqlx::query(
+            "insert into deployment_events
+                 (sender, target_name, repository, version, commit_sha, auth_method)
+             values ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(&fact.sender)
+        .bind(&fact.target)
+        .bind(&fact.repository)
+        .bind(&fact.version)
+        .bind(&fact.commit)
+        .bind(fact.auth_method.as_str())
+        .execute(&mut *transaction)
+        .await?;
+        DeploymentOutcome::Created
+    };
+    transaction.commit().await?;
+    Ok(Some(outcome))
 }
 
 pub(crate) async fn register_targets(

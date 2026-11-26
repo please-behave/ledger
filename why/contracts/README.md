@@ -4,7 +4,7 @@ An API is a compatibility boundary between a producer and its consumers. A contr
 
 | API | Contract |
 |---|---|
-| Ingest | [Attestation Envelope](ingest/attestation.md), [Rule Registration](ingest/rule-registration.md), [Release Fact](ingest/release-fact.md), [Deployment Target Registration](ingest/target-registration.md) |
+| Ingest | [Attestation Envelope](ingest/attestation.md), [Rule Registration](ingest/rule-registration.md), [Release Fact](ingest/release-fact.md), [Deployment Target Registration](ingest/target-registration.md), [Deployment Fact](ingest/deployment-fact.md) |
 | Read | [Latest Attestations](read/latest.md), [Attestation](read/attestation.md), [Attestation History](read/history.md), [Registered Rules](read/rules.md), [Registered Rule Versions](read/rule.md), [Latest Releases](read/latest-releases.md), [Release History](read/releases.md), [Release Detail](read/release.md) |
 | Rule Digest | [Canonical Rule Digest](rule-digest/digest.md) |
 

@@ -1,0 +1,11 @@
+id: REQ-0052
+name: Validate Deployment Fact Submissions
+description: >-
+  The ledger must reject deployment reports that violate the ingest contract
+  or name a target the authenticated sender has not registered.
+rationale: >-
+  Deployment facts need an unambiguous subject and an explicitly registered
+  destination owned by the reporter.
+decisions:
+  - why:DEC-0022
+  - why:DEC-0023

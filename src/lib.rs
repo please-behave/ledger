@@ -1,6 +1,7 @@
 pub mod attestation;
 pub mod config;
 pub mod database;
+mod deployment_fact;
 pub mod http;
 mod registration;
 mod release_fact;

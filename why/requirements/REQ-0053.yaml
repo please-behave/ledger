@@ -1,0 +1,14 @@
+id: REQ-0053
+name: Record Changes to the Current Deployment
+description: >-
+  For each registered target and subject repository, the ledger must append
+  a deployment event with the reported version or commit, authenticated
+  sender, authentication method and ledger receipt time when the report
+  differs from the current event or there is no current event. A report
+  matching the current event must leave history unchanged. A version report
+  can be recorded before its release fact exists.
+rationale: >-
+  A history of reported changes preserves rollbacks without duplicating
+  retries or depending on the delivery order of release facts.
+decisions:
+  - why:DEC-0023

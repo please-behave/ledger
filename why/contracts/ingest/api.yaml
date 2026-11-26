@@ -47,3 +47,10 @@ contracts:
     requirements:
       - REQ-0050
       - REQ-0051
+  - id: CON-0021
+    name: Deployment Fact
+    document: deployment-fact.md
+    schema: deployment-fact.schema.json
+    requirements:
+      - REQ-0052
+      - REQ-0053
