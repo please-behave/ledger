@@ -95,11 +95,13 @@ async fn migrate_creates_the_schema_and_is_idempotent() {
     assert!(exists(&pool, "rule_set_registrations").await);
     assert!(exists(&pool, "release_facts").await);
     assert!(exists(&pool, "deployment_targets").await);
+    assert!(exists(&pool, "deployment_events").await);
     for index in [
         "attestations_latest_idx",
         "attestations_repository_commit_idx",
         "attestation_results_rule_id_idx",
         "attestation_results_rule_identity_version_idx",
+        "deployment_events_current_idx",
     ] {
         assert!(exists(&pool, index).await, "{index} exists");
     }
@@ -560,6 +562,89 @@ async fn deployment_target_migration_preserves_attestations_and_keys_targets_by_
         .await
         .expect("count attestations after storing deployment targets");
     assert_eq!(attestation_count, 2);
+}
+
+#[tokio::test]
+async fn deployment_event_migration_preserves_targets_and_accepts_rollback_history() {
+    const MIGRATIONS: Migrator = sqlx::migrate!();
+    const PRE_DEPLOYMENT_SCHEMA: i64 = 20261126000000;
+    const OWNER: &str = "github.com/owner/infra";
+    const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    let database = postgres().await;
+    let pool = ledger::database::connect(&database.url)
+        .await
+        .expect("connect");
+    MIGRATIONS
+        .run_to(PRE_DEPLOYMENT_SCHEMA, &pool)
+        .await
+        .expect("apply the preceding schema");
+    sqlx::query("insert into deployment_targets (owner, name) values ($1, 'production')")
+        .bind(OWNER)
+        .execute(&pool)
+        .await
+        .expect("register a target before migration");
+    assert!(!exists(&pool, "deployment_events").await);
+
+    ledger::database::migrate(&pool)
+        .await
+        .expect("add deployment event storage");
+    sqlx::query("insert into deployment_targets (owner, name) values ($1, 'staging')")
+        .bind(OWNER)
+        .execute(&pool)
+        .await
+        .expect("register another target through the existing schema");
+
+    let insert_event = |sender: &str, version: Option<&str>, commit: Option<&str>| {
+        sqlx::query_scalar::<_, bool>(
+            "insert into deployment_events
+                 (sender, target_name, repository, version, commit_sha, auth_method)
+             values ($1, 'production', 'github.com/owner/software', $2, $3, 'github_oidc')
+             returning received_at = statement_timestamp()",
+        )
+        .bind(sender.to_owned())
+        .bind(version.map(str::to_owned))
+        .bind(commit.map(str::to_owned))
+        .fetch_one(&pool)
+    };
+    for (version, commit) in [(Some("v1"), None), (None, Some(COMMIT)), (Some("v1"), None)] {
+        assert!(
+            insert_event(OWNER, version, commit)
+                .await
+                .expect("store the deployment with a database receipt time")
+        );
+    }
+    let history: Vec<(Option<String>, Option<String>)> = sqlx::query_as(
+        "select version, commit_sha from deployment_events order by received_at, id",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("read deployment history");
+    assert_eq!(
+        history,
+        [
+            (Some("v1".into()), None),
+            (None, Some(COMMIT.into())),
+            (Some("v1".into()), None),
+        ]
+    );
+
+    let unregistered = insert_event("github.com/another/infra", Some("v1"), None)
+        .await
+        .expect_err("the sender must own the target");
+    assert!(
+        matches!(unregistered, sqlx::Error::Database(error) if error.is_foreign_key_violation())
+    );
+    for (version, commit) in [
+        (None, None),
+        (Some("v1"), Some(COMMIT)),
+        (None, Some("abc123")),
+    ] {
+        let invalid = insert_event(OWNER, version, commit)
+            .await
+            .expect_err("the event needs exactly one valid version or commit");
+        assert!(matches!(invalid, sqlx::Error::Database(error) if error.is_check_violation()));
+    }
 }
 
 #[tokio::test]
