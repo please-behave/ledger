@@ -96,6 +96,9 @@ async fn migrate_creates_the_schema_and_is_idempotent() {
     assert!(exists(&pool, "release_facts").await);
     assert!(exists(&pool, "deployment_targets").await);
     assert!(exists(&pool, "deployment_events").await);
+    assert!(exists(&pool, "repository_inventory").await);
+    assert!(exists(&pool, "repository_head_observations").await);
+    assert!(exists(&pool, "collector_heartbeats").await);
     for index in [
         "attestations_latest_idx",
         "attestations_repository_commit_idx",
@@ -644,6 +647,115 @@ async fn deployment_event_migration_preserves_targets_and_accepts_rollback_histo
             .await
             .expect_err("the event needs exactly one valid version or commit");
         assert!(matches!(invalid, sqlx::Error::Database(error) if error.is_check_violation()));
+    }
+}
+
+#[tokio::test]
+async fn platform_fact_migration_preserves_attestations_and_keys_facts() {
+    const MIGRATIONS: Migrator = sqlx::migrate!();
+    const PRE_PLATFORM_FACTS_SCHEMA: i64 = 20261126000002;
+    const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
+    const OTHER_COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    let database = postgres().await;
+    let pool = ledger::database::connect(&database.url)
+        .await
+        .expect("connect");
+    MIGRATIONS
+        .run_to(PRE_PLATFORM_FACTS_SCHEMA, &pool)
+        .await
+        .expect("apply the preceding schema");
+    insert_attestation(&pool, &[])
+        .await
+        .expect("insert an existing attestation");
+
+    ledger::database::migrate(&pool)
+        .await
+        .expect("add platform fact storage");
+    insert_attestation(&pool, &[("id", OTHER_ID)])
+        .await
+        .expect("insert an attestation through the old columns");
+
+    let insert_inventory = |platform: &'static str, host: &'static str| {
+        sqlx::query(
+            "insert into repository_inventory
+                 (platform, host, owner, name, sender, default_branch,
+                  archived, fork, first_seen_at, last_seen_at)
+             values ($1, $2, 'owner', 'name', 'collector', 'main',
+                     false, false, now(), now())
+             on conflict (platform, host, owner, name) do nothing",
+        )
+        .bind(platform)
+        .bind(host)
+        .execute(&pool)
+    };
+    for (platform, host, inserted) in [
+        ("github", "github.com", 1),
+        ("github", "github.com", 0),
+        ("github", "git.example.com", 1),
+        ("another-platform", "github.com", 1),
+    ] {
+        let result = insert_inventory(platform, host)
+            .await
+            .expect("store inventory by qualified identity");
+        assert_eq!(result.rows_affected(), inserted);
+    }
+
+    let joined: i64 = sqlx::query_scalar(
+        "select count(*) from repository_inventory
+         join attestations using (repository)
+         where platform = 'github'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("join inventory to normalized attestation identities");
+    assert_eq!(joined, 2);
+
+    let insert_head = |commit: &'static str, observation: &'static str| {
+        sqlx::query(
+            "insert into repository_head_observations
+                 (platform, host, owner, name, sender, branch, commit_sha, committed_at, observed_at)
+             values ('github', 'github.com', 'owner', 'name', 'collector', 'main', $1,
+                     '2026-11-25T00:00:00Z', $2::text::timestamptz)
+             on conflict do nothing",
+        )
+        .bind(commit)
+        .bind(observation)
+        .execute(&pool)
+    };
+    for (commit, observation, inserted) in [
+        (COMMIT, "2026-11-26T00:00:00Z", 1),
+        (COMMIT, "2026-11-26T00:00:00Z", 0),
+        (OTHER_COMMIT, "2026-11-26T00:05:00Z", 1),
+        (COMMIT, "2026-11-26T00:10:00Z", 1),
+    ] {
+        let result = insert_head(commit, observation)
+            .await
+            .expect("store each distinct head observation");
+        assert_eq!(result.rows_affected(), inserted);
+    }
+    let invalid = insert_head("0123456", "2026-11-26T00:15:00Z")
+        .await
+        .expect_err("a head requires a full commit ID");
+    assert!(matches!(invalid, sqlx::Error::Database(error) if error.is_check_violation()));
+
+    for (sender, scope, inserted) in [
+        ("collector", "owner/*", 1),
+        ("collector", "owner/*", 0),
+        ("collector", "owner/name", 1),
+        ("other-collector", "owner/*", 1),
+    ] {
+        let result = sqlx::query(
+            "insert into collector_heartbeats (sender, platform, host, scope, completed_at)
+             values ($1, 'github', 'github.com', $2, now())
+             on conflict do nothing",
+        )
+        .bind(sender)
+        .bind(scope)
+        .execute(&pool)
+        .await
+        .expect("store one heartbeat per sender and scope");
+        assert_eq!(result.rows_affected(), inserted);
     }
 }
 
