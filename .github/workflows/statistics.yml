@@ -24,6 +24,7 @@ jobs:
           experimental: true
           version: 2026.11.11
       - name: Run tests and calculate coverage
+        shell: bash
         run: |
           mkdir -p target/statistics
           cargo llvm-cov --locked --json --summary-only --output-path target/llvm-cov-summary.json 2>&1 | tee target/test-output.txt

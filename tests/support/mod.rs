@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 use ledger::database;
+use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
@@ -57,6 +58,30 @@ pub async fn migrated_pool(postgres: &Postgres) -> PgPool {
     let pool = database::connect(&postgres.url).await.expect("connect");
     database::migrate(&pool).await.expect("migrate");
     pool
+}
+
+pub fn attestation_envelope(
+    repository: &str,
+    points: &[&str],
+    commit: &str,
+    statuses: &[&str],
+) -> Value {
+    let results: Vec<Value> = statuses
+        .iter()
+        .enumerate()
+        .map(|(index, status)| json!({"id": format!("rule-{index}"), "kind": "check", "status": status}))
+        .collect();
+    json!({
+        "sender": "ci",
+        "attestation": {
+            "schema_version": 1,
+            "repository": repository,
+            "commit": commit,
+            "execution_points": points,
+            "overall": "PASS",
+            "results": results
+        }
+    })
 }
 
 pub fn get(address: SocketAddr, path: &str) -> (u16, String) {
