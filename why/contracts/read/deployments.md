@@ -8,8 +8,10 @@ ID. It pages the selected events in that same descending order. See
 [deployments.schema.json](deployments.schema.json) for the response shape.
 
 Each entry carries its event `id`, target `owner` and `name`, subject
-`repository`, authenticated `sender`, `auth_method` and `received_at` in
-RFC 3339 UTC. The target owner is the sender. Exactly one of `version` and
+`repository`, authenticated `sender`, `auth_method` and `received_at`.
+The timestamp follows
+[why:DEC-0027](https://github.com/please-behave/why/blob/main/why/decisions/DEC-0027.yaml).
+The target owner is the sender. Exactly one of `version` and
 `reported_commit` is populated with the reported reference. The other is
 `null`. The `commit` field carries the reported commit or the commit from
 the release fact for the exact repository and version.

@@ -15,8 +15,10 @@ fields follow the [registration contract](../ingest/rule-registration.md).
 | `404` | No versions are registered for this identity. |
 
 Each entry contains the registered rule fields, its canonical digest, the
-original registering commit, the time the ledger first stored it in UTC and
-the `owner`. The owner is the authenticated sender stored from the first
+original registering commit, the time the ledger first stored it and
+the `owner`. The timestamp follows
+[why:DEC-0027](https://github.com/please-behave/why/blob/main/why/decisions/DEC-0027.yaml).
+The owner is the authenticated sender stored from the first
 registration of that version, as received. It is a repository identity for
 GitHub OIDC or a key label for API keys. A repeat registration with the same
 digest preserves the owner.

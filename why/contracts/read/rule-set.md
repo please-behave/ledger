@@ -18,7 +18,9 @@ Each entry contains the identity, version, stored name, description and
 knowledge document, and the full member list in registration order. Each
 member carries the rule identity, version, digest and enabled state.
 Optional fields are omitted when absent. The entry includes the set
-`digest`, original registering `commit` and `registered_at` time in UTC.
+`digest`, original registering `commit` and `registered_at` time. The
+timestamp follows
+[why:DEC-0027](https://github.com/please-behave/why/blob/main/why/decisions/DEC-0027.yaml).
 
 The ledger returns texts as stored and leaves registrations unchanged.
 Consumers must treat the texts as untrusted and escape them for display.

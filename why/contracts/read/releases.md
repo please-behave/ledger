@@ -8,7 +8,8 @@ Both release lists return a JSON array ordered by descending receipt time.
 Ties are broken by descending repository and version text. Versions are
 opaque, so their text only determines order when receipt times tie. Each
 entry includes the repository, version, commit, authenticated sender,
-authentication method and receipt time in RFC 3339 UTC.
+authentication method and receipt time. The timestamp follows
+[why:DEC-0027](https://github.com/please-behave/why/blob/main/why/decisions/DEC-0027.yaml).
 
 The `evidence` field is `null` when no attestation qualifies. Otherwise it
 contains the evidence attestation's `overall` status and the

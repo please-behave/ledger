@@ -63,8 +63,10 @@ platforms it preserves their case.
   The ledger stores only the latest completion for each sender and
   scope. A request with the same or an older completion for that sender
   and scope succeeds as a no-op. Reuse the original completion and
-  observation times on retry. Timestamps use RFC 3339 with up to six
-  fractional digits.
+  observation times on retry. Producers follow
+  [why:DEC-0027](https://github.com/please-behave/why/blob/main/why/decisions/DEC-0027.yaml)
+  and send up to six fractional digits. The request schema also accepts
+  explicit numeric offsets, which the ledger normalizes to UTC.
 
 Inventory updates, omissions, heads and the heartbeat commit together.
 

@@ -72,6 +72,7 @@ ID. Its owner and name identify the deployment target. A summary is
 `null` when no applicable fact exists. The same applies to missing
 `latest_check` and `head` values.
 
-The read leaves all stored data unchanged. Timestamps are RFC 3339 UTC.
+The read leaves all stored data unchanged. Timestamps follow
+[why:DEC-0027](https://github.com/please-behave/why/blob/main/why/decisions/DEC-0027.yaml).
 Consumers must escape stored text for display and present attestations,
 releases and deployments as reported by their senders.

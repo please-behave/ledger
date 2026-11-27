@@ -34,7 +34,7 @@
         },
         "received_at": {
           "type": "string",
-          "description": "When the ledger received it, as an RFC 3339 UTC timestamp."
+          "description": "When the ledger received the attestation."
         },
         "sender": {
           "type": "string"

@@ -17,8 +17,9 @@ matched as stored.
 The ledger selects the newest attestation for the pair whose execution points
 contain `check`, ordered by receipt time and then by greater attestation ID.
 The evidence includes that attestation's `id`, `overall`, `received_at`,
-`sender` and `auth_method`. The timestamp is RFC 3339 UTC. The method is
-`null` when the stored envelope did not carry it. Consumers can use the ID to
+`sender` and `auth_method`. The timestamp follows
+[why:DEC-0027](https://github.com/please-behave/why/blob/main/why/decisions/DEC-0027.yaml).
+The method is `null` when the stored envelope did not carry it. Consumers can use the ID to
 read the [attestation detail](attestation.md) and its reported rule results.
 
 Only bindings at `check` in the selected attestation appear in `rule_sets`.

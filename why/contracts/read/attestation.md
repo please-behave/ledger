@@ -14,6 +14,9 @@ Producer: the ledger. Consumer: the cockpit. All paths of this API start with `/
 
 The read changes nothing.
 
+The summary's `received_at` is when the ledger received the attestation.
+It follows [why:DEC-0027](https://github.com/please-behave/why/blob/main/why/decisions/DEC-0027.yaml).
+
 ## Bound Rule Sets
 
 The `rule_sets` array contains the stored bindings in reported order, including
