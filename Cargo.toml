@@ -27,4 +27,4 @@ path = "tools/read-benchmark/main.rs"
 
 [dev-dependencies]
 testcontainers = "=0.28.0"
-tower = { version = "0.5.3", features = ["util"] }
+tower = { version = "=0.5.3", features = ["util"] }
