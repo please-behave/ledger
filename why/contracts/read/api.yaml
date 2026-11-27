@@ -13,6 +13,7 @@ contracts:
       - REQ-0016
       - REQ-0019
       - REQ-0020
+      - REQ-0063
   - id: CON-0003
     name: Attestation
     document: attestation.md
@@ -28,6 +29,7 @@ contracts:
       - REQ-0032
       - REQ-0042
       - REQ-0061
+      - REQ-0063
   - id: CON-0004
     name: Attestation History
     document: history.md
@@ -39,36 +41,42 @@ contracts:
       - REQ-0021
       - REQ-0022
       - REQ-0049
+      - REQ-0063
   - id: CON-0007
     name: Registered Rules
     document: rules.md
     schema: rules.schema.json
     requirements:
       - REQ-0029
+      - REQ-0063
   - id: CON-0008
     name: Registered Rule Versions
     document: rule.md
     schema: rule.schema.json
     requirements:
       - REQ-0030
+      - REQ-0063
   - id: CON-0011
     name: Registered Rule Sets
     document: rule-sets.md
     schema: rule-sets.schema.json
     requirements:
       - REQ-0038
+      - REQ-0063
   - id: CON-0012
     name: Registered Rule Set Versions
     document: rule-set.md
     schema: rule-set.schema.json
     requirements:
       - REQ-0039
+      - REQ-0063
   - id: CON-0013
     name: Rule Set Compliance by Repository
     document: rule-set-compliance.md
     schema: rule-set-compliance.schema.json
     requirements:
       - REQ-0040
+      - REQ-0063
   - id: CON-0014
     name: Completed Rule Sets by Repository
     document: completed-rule-sets.md
@@ -76,6 +84,7 @@ contracts:
     requirements:
       - REQ-0040
       - REQ-0041
+      - REQ-0063
   - id: CON-0016
     name: Commit Evidence
     document: commit-evidence.md
@@ -83,6 +92,7 @@ contracts:
     requirements:
       - REQ-0019
       - REQ-0046
+      - REQ-0063
   - id: CON-0017
     name: Latest Releases
     document: latest-releases.md
@@ -90,6 +100,7 @@ contracts:
     requirements:
       - REQ-0047
       - REQ-0048
+      - REQ-0063
   - id: CON-0018
     name: Release History
     document: releases.md
@@ -97,12 +108,14 @@ contracts:
     requirements:
       - REQ-0047
       - REQ-0048
+      - REQ-0063
   - id: CON-0019
     name: Release Detail
     document: release.md
     schema: release.schema.json
     requirements:
       - REQ-0048
+      - REQ-0063
   - id: CON-0022
     name: Current Deployments
     document: deployments.md
@@ -112,6 +125,7 @@ contracts:
       - REQ-0046
       - REQ-0054
       - REQ-0055
+      - REQ-0063
   - id: CON-0024
     name: Repository Overview
     document: repository-overview.md
@@ -120,3 +134,4 @@ contracts:
       - REQ-0019
       - REQ-0059
       - REQ-0060
+      - REQ-0063

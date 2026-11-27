@@ -1,0 +1,16 @@
+id: REQ-0063
+name: Read API Latency Budget
+area: operations
+description: >-
+  Every Read API endpoint must respond within 250 milliseconds at the 95th
+  percentile when measured by the seeded ledger read benchmark against a
+  local database containing 1,000 repositories and 20,000 attestations with
+  their releases, deployments and completed Rule Sets. Evaluate the reported
+  p95 separately for each endpoint and each benchmarked paging variant,
+  using the page sizes and cursors a consumer uses.
+rationale: >-
+  A common latency budget makes read performance regressions visible at
+  the volume a growing installation reaches.
+test_exemption: >-
+  The on-demand read benchmark verifies the budget against a seeded local
+  database independently of the automated test suite.
