@@ -30,3 +30,29 @@ The ledger appends a head only when it differs from the nearest stored earlier o
 `GET /v0/repositories/overview` serves repository status, the collector heartbeat and the latest check, release and deployment in one read. See the [repository overview contract](why/contracts/read/repository-overview.md).
 
 It is released as the container image `ghcr.io/please-behave/ledger`. The purpose and principles of Please Behave are in the [Why repository](https://github.com/please-behave/why).
+
+## Read benchmark
+
+Use a disposable PostgreSQL 17 or later database with a role that can create
+schemas and load the PostgreSQL `auto_explain` module. From the repository root:
+
+```sh
+cargo run --locked --release --example read-benchmark -- \
+  --database-url 'postgres://postgres:password@localhost:5432/ledger_benchmark' \
+  --seed 1 --repositories 1000 --attestations 20000 --repeats 20
+```
+
+These are the default seed, volumes and repeat count. The tool applies the
+ledger migrations in a new schema and keeps that schema for inspection. The
+same seed and volume settings produce the same records and timestamps. The
+fixture includes passing and failing checks, uncovered heads, repositories
+without attestations, releases, three deployment targets and Rule Set
+registrations and bindings. The benchmark extends the overview's heartbeat
+freshness window to cover the fixture's fixed timeline.
+
+The tool measures all read API routes in process, including response
+serialization. It uses the cockpit's page sizes and follows real cursors where
+a first page is full. After one warm-up per request it reports the median and
+nearest-rank p95 in milliseconds. It replays the three requests with the highest
+medians and prints PostgreSQL's plans with actual execution statistics and
+buffer usage via `auto_explain`. The benchmark runs on demand.

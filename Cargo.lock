@@ -1577,6 +1577,7 @@ dependencies = [
  "sqlx",
  "testcontainers",
  "tokio",
+ "tower",
  "tracing",
  "tracing-subscriber",
  "uuid",

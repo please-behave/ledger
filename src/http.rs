@@ -29,7 +29,7 @@ pub fn router(pool: PgPool) -> Router {
     router_with_overview_config(pool, OverviewConfig::default())
 }
 
-fn router_with_overview_config(pool: PgPool, config: OverviewConfig) -> Router {
+pub fn router_with_overview_config(pool: PgPool, config: OverviewConfig) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))

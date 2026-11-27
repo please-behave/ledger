@@ -38,6 +38,11 @@ impl Default for OverviewConfig {
 }
 
 impl OverviewConfig {
+    pub fn with_heartbeat_staleness(mut self, duration: TimeDelta) -> Self {
+        self.heartbeat_staleness = duration;
+        self
+    }
+
     pub fn from_env() -> Result<Self> {
         let mut config = Self::default();
         if let Some(value) = optional_env(HEARTBEAT_STALE_SECONDS)? {
