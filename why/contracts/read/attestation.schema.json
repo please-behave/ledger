@@ -89,6 +89,10 @@
           "path": { "type": "string" },
           "id": { "type": "string", "description": "The Rule Set's local ID." },
           "version": { "type": "string" },
+          "description": {
+            "type": "string",
+            "description": "The full stored description of the matching registered Rule Set version, when available. Consumers must escape this untrusted text when displaying it."
+          },
           "execution_points": {
             "type": "array",
             "items": { "type": "string" }
@@ -114,6 +118,10 @@
           "name": {
             "type": "string",
             "description": "The stored name of the matching registered rule version, when available."
+          },
+          "description": {
+            "type": "string",
+            "description": "The full stored description of the matching registered rule version, when available. Consumers must escape this untrusted text when displaying it."
           },
           "rule": {
             "type": "object",

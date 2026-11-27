@@ -21,6 +21,11 @@ bindings for unregistered versions. Each binding contains its `source`, `path`,
 `id` (the Rule Set's local ID), `version` and `execution_points` as reported.
 The array is empty when no bindings were stored.
 
+The ledger includes `description` when the registration matching the binding's
+`source`, `path`, `id` and `version` has a description. It omits the field
+when that registration or its description is absent. The ledger returns the
+full text as stored. The consumer must escape this untrusted text when displaying it.
+
 ## Stored rule identity
 
 When a result has a stored identity, the ledger returns it in `rule` with
@@ -42,6 +47,11 @@ Every result has a `verification` object. The ledger looks up the stored rule so
 
 The ledger computes verification on each read. A later registration can resolve an earlier result while the attestation and its results stay as reported.
 
-## Registered rule name
+## Registered rule name and description
 
-A result includes `name` when the registration matching its stored rule source, path, local ID and version has a name. The ledger returns the name as stored, regardless of the digest comparison. It omits the field when there is no matching registration or the registration has no name. The consumer must escape this untrusted text when displaying it.
+A result includes `name` and `description` when the registration matching its
+stored rule source, path, local ID and version has those values. The ledger
+returns each value in full as stored, regardless of the digest comparison.
+It omits both fields when there is no matching registration and omits each
+field whose value is absent from the registration. The consumer must escape
+this untrusted text when displaying it.

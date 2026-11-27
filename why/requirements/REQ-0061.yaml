@@ -1,0 +1,13 @@
+id: REQ-0061
+name: Registered Descriptions on Attestation Reads
+area: attestations
+description: >-
+  In an attestation detail read, the ledger must include the stored
+  description for each result and Rule Set binding whose source, path,
+  local ID and version match a registration with a description. The result
+  description is independent of the digest comparison. The ledger must
+  return the text in full and omit the field when there is no matching
+  registration or the registration has no description.
+rationale: >-
+  Consumers can explain the rules and Rule Sets bound to the run without
+  additional registry reads.

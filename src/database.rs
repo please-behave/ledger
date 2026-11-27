@@ -1079,6 +1079,8 @@ pub struct ResultRow {
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     rule: Option<ResultRule>,
     verification: Verification,
 }
@@ -1168,7 +1170,15 @@ pub async fn attestation(
 ) -> Result<Option<StoredAttestation>, sqlx::Error> {
     let attestation = sqlx::query(summary_query!(
         "attestations a where a.id = $1",
-        ", a.rule_sets"
+        ", (select coalesce(jsonb_agg(
+                case when s.description is null then binding
+                     else binding || jsonb_build_object('description', s.description)
+                end order by position
+            ), '[]'::jsonb)
+            from jsonb_array_elements(a.rule_sets) with ordinality as b(binding, position)
+            left join rule_set_registrations s
+              on s.source = binding->>'source' and s.path = binding->>'path'
+             and s.id = binding->>'id' and s.version = binding->>'version') as rule_sets"
     ))
     .bind(id)
     .fetch_optional(pool)
@@ -1179,7 +1189,8 @@ pub async fn attestation(
     let summary = Summary::from_row(&attestation)?;
     let rule_sets = attestation.try_get("rule_sets")?;
     let rows = sqlx::query_as(
-        "select r.rule_id, r.kind, r.status, registration.name, r.rule_digest = registration.digest, \
+        "select r.rule_id, r.kind, r.status, registration.name, registration.description, \
+                r.rule_digest = registration.digest, \
                 r.rule_source, r.rule_path, r.rule_local_id, r.rule_version \
          from attestation_results r \
          left join rule_registrations registration \
@@ -1193,11 +1204,23 @@ pub async fn attestation(
     let results = rows
         .into_iter()
         .map(
-            |(id, kind, status, name, digest_matches, source, path, local_id, version)| ResultRow {
+            |(
                 id,
                 kind,
                 status,
                 name,
+                description,
+                digest_matches,
+                source,
+                path,
+                local_id,
+                version,
+            )| ResultRow {
+                id,
+                kind,
+                status,
+                name,
+                description,
                 rule: match (source, path, local_id) {
                     (Some(source), Some(path), Some(id)) => Some(ResultRule {
                         source,

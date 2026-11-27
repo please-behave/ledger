@@ -862,17 +862,34 @@ async fn counts_and_results_follow_the_stored_attestation() {
 }
 
 // REQ-0042: the detail read returns reported bindings, or an empty array without them.
+// REQ-0061: only matching Rule Set versions contribute their stored descriptions.
 #[tokio::test(flavor = "multi_thread")]
 async fn attestation_detail_returns_the_stored_rule_set_bindings() {
     let postgres = postgres().await;
     let address = start_service(migrated_pool(&postgres).await).await;
     let points = ["check", "pre-push", "ci"];
     let baseline = set_binding("baseline", "2.0", &["pre-push", "check"]);
-    let mut older = set_binding("baseline", "1.0", &["ci"]);
-    older["path"] = json!("bundles/baseline");
-    let bindings = json!([baseline, older, baseline]);
+    let older = set_binding("baseline", "1.0", &["ci"]);
+    let unregistered = set_binding("baseline", "3.0", &["ci"]);
+    let mut other_path = baseline.clone();
+    other_path["path"] = json!("bundles/baseline");
+    let bindings = json!([baseline, older, unregistered, other_path, baseline]);
+    let description = "Résumé <baseline> & checks\n".repeat(100);
+    register_for_compliance(
+        address,
+        "/v0/rule-set-registrations",
+        json!({"sender": "ci", "commit": COMMIT, "sets": [
+            {"source": SET_SOURCE, "path": ".", "id": "baseline", "version": "1.0", "members": []},
+            {"source": SET_SOURCE, "path": ".", "id": "baseline", "version": "2.0", "members": [],
+             "description": description}
+        ]}),
+    )
+    .await;
     let mut bound = envelope("bound", &points, COMMIT, &["PASS"]);
     bound["attestation"]["rule_sets"] = bindings.clone();
+    let mut enriched = bindings;
+    enriched[0]["description"] = json!(description);
+    enriched[4]["description"] = json!(description);
     let unbound = envelope("unbound", &points, COMMIT, &["PASS"]);
     let schema: Value = serde_json::from_str(include_str!(
         "../why/contracts/read/attestation.schema.json"
@@ -880,7 +897,7 @@ async fn attestation_detail_returns_the_stored_rule_set_bindings() {
     .unwrap();
     let validator = jsonschema::draft202012::new(&schema).unwrap();
 
-    for (report, expected) in [(bound, bindings), (unbound, json!([]))] {
+    for (report, expected) in [(bound, enriched), (unbound, json!([]))] {
         let id = ingest(address, report).await;
         let (status, attestation) = read_json(address, format!("/v0/attestations/{id}")).await;
         assert_eq!(status, 200);
@@ -924,6 +941,7 @@ async fn results_return_the_stored_rule_identity_when_present() {
 
 // REQ-0028: a later registration resolves results against the full identity and version.
 // REQ-0031: the registered name is optional and independent of verification.
+// REQ-0061: the same version match supplies an optional stored description.
 #[tokio::test(flavor = "multi_thread")]
 async fn verification_reflects_a_registration_that_arrives_after_ingest() {
     let postgres = postgres().await;
@@ -973,6 +991,7 @@ async fn verification_reflects_a_registration_that_arrives_after_ingest() {
     for result in before["results"].as_array().unwrap() {
         assert_eq!(result["verification"], unregistered);
         assert!(result.get("name").is_none());
+        assert!(result.get("description").is_none());
     }
 
     let request =
@@ -995,10 +1014,20 @@ async fn verification_reflects_a_registration_that_arrives_after_ingest() {
     assert_eq!(status, 200);
     before["results"][0]["verification"] = json!({"status": "verified"});
     before["results"][0]["name"] = named["name"].clone();
+    before["results"][0]["description"] = named["description"].clone();
     before["results"][1]["verification"] = json!({"status": "unverified", "reason": "mismatch"});
     before["results"][1]["name"] = named["name"].clone();
+    before["results"][1]["description"] = named["description"].clone();
     before["results"][8]["verification"] = json!({"status": "verified"});
     assert_eq!(after, before);
+    let schema: Value = serde_json::from_str(include_str!(
+        "../why/contracts/read/attestation.schema.json"
+    ))
+    .unwrap();
+    jsonschema::draft202012::new(&schema)
+        .unwrap()
+        .validate(&after)
+        .unwrap();
 }
 
 // REQ-0016, REQ-0020: an attestation without results has zero counts and an empty result list.
