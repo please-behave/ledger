@@ -9,13 +9,16 @@ use crate::repository_overview::{self, RepositoryOverview};
 use crate::rule_set_registration::{RuleSetRequest, SetOutcome};
 use crate::target_registration::{TargetOutcome, TargetRequest};
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Path, Query, RawQuery, State};
-use axum::http::StatusCode;
+use axum::extract::{DefaultBodyLimit, MatchedPath, Path, Query, RawQuery, Request, State};
+use axum::http::{Method, StatusCode};
+use axum::middleware::{self, Next};
+use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router, serve};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::PgPool;
+use std::time::Instant;
 use tokio::net::TcpListener;
 use tokio::signal;
 use uuid::Uuid;
@@ -31,9 +34,7 @@ pub fn router(pool: PgPool) -> Router {
 
 pub fn router_with_overview_config(pool: PgPool, config: OverviewConfig) -> Router {
     Router::new()
-        .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
-        .route("/v0/attestations", post(ingest).get(history))
+        .route("/v0/attestations", get(history))
         .route("/v0/attestations/latest", get(latest))
         .route("/v0/attestations/{id}", get(read))
         .route("/v0/repositories/commit-evidence", get(commit_evidence))
@@ -54,6 +55,10 @@ pub fn router_with_overview_config(pool: PgPool, config: OverviewConfig) -> Rout
             "/v0/repositories/completed-rule-sets",
             get(completed_rule_sets),
         )
+        .route_layer(middleware::from_fn(log_read_request))
+        .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
+        .route("/v0/attestations", post(ingest))
         .route(
             "/v0/rule-registrations",
             post(register).layer(DefaultBodyLimit::max(MAX_INGEST_BODY_BYTES)),
@@ -79,6 +84,22 @@ pub fn router_with_overview_config(pool: PgPool, config: OverviewConfig) -> Rout
             post(record_platform_sync).layer(DefaultBodyLimit::max(MAX_PLATFORM_SYNC_BYTES)),
         )
         .with_state(pool)
+}
+
+async fn log_read_request(path: MatchedPath, request: Request, next: Next) -> Response {
+    if !matches!(*request.method(), Method::GET | Method::HEAD) {
+        return next.run(request).await;
+    }
+
+    let start = Instant::now();
+    let response = next.run(request).await;
+    tracing::info!(
+        route = path.as_str(),
+        status = response.status().as_u16(),
+        duration_ms = start.elapsed().as_secs_f64() * 1_000.0,
+        "read request"
+    );
+    response
 }
 
 pub async fn run(listener: TcpListener, pool: PgPool) -> std::io::Result<()> {

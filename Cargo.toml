@@ -7,7 +7,7 @@ license = "PolyForm-Noncommercial-1.0.0"
 
 [dependencies]
 anyhow = "1.0.104"
-axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio"] }
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "matched-path", "query", "tokio"] }
 chrono = { version = "0.4.45", default-features = false, features = ["serde", "std"] }
 clap = { version = "4.6.9", features = ["derive"] }
 form_urlencoded = "1.2.2"

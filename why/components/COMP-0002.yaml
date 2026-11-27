@@ -11,6 +11,8 @@ scope:
     Parses request bodies, paths and query parameters and rejects malformed ones before any storage call.
   - >-
     Answers the liveness and readiness probes.
+  - >-
+    Logs the duration and outcome of Read API requests.
 out_of_scope:
   - description: Validating the content of an ingested document.
     owner: COMP-0003
@@ -68,3 +70,4 @@ requirements:
   - REQ-0055
   - REQ-0056
   - REQ-0059
+  - REQ-0062

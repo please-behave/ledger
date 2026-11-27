@@ -1,0 +1,11 @@
+id: REQ-0062
+name: Read Request Timing
+area: operations
+description: >-
+  For each completed Read API request, the ledger must log one timing
+  record with the matched route pattern, HTTP response status and elapsed
+  server time in milliseconds. The timing record must omit query
+  parameters, concrete path identifiers, headers and bodies.
+rationale: >-
+  Operators can measure the ledger's contribution to slow reads without
+  exposing request data.

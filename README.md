@@ -29,6 +29,8 @@ The ledger appends a head only when it differs from the nearest stored earlier o
 
 `GET /v0/repositories/overview` serves repository status, the collector heartbeat and the latest check, release and deployment in one read. See the [repository overview contract](why/contracts/read/repository-overview.md).
 
+Each completed Read API request emits one JSON log line at `INFO` with the message `read request`. The `route` field contains the route pattern (for example, `/v0/attestations/{id}`), `status` contains the HTTP response code, and `duration_ms` measures server time through response creation in milliseconds. This includes error responses. The line omits query parameters, path identifiers, headers and bodies.
+
 It is released as the container image `ghcr.io/please-behave/ledger`. The purpose and principles of Please Behave are in the [Why repository](https://github.com/please-behave/why).
 
 ## Read benchmark
