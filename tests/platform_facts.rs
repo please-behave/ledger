@@ -339,7 +339,6 @@ async fn rejects_invalid_platform_syncs() {
         ("/host", json!("github.com:443")),
         ("/platform", json!("GitHub")),
         ("/completed_at", json!("2026-02-31T10:00:00Z")),
-        ("/completed_at", json!("2026-11-26T10:00:00.0000001Z")),
         ("/inventory/0/fork", json!("false")),
         ("/inventory/0/name", json!("../name")),
         ("/heads/0/name", json!("unlisted")),
@@ -366,6 +365,29 @@ async fn rejects_invalid_platform_syncs() {
             "{pointer}"
         );
     }
+    let timestamp_fields = [
+        "/completed_at",
+        "/inventory/0/last_activity_at",
+        "/heads/0/committed_at",
+        "/heads/0/observed_at",
+    ];
+    for pointer in timestamp_fields {
+        for timestamp in [
+            "2026-11-26T10:00:00+00:00",
+            "2026-11-26T11:00:00+01:00",
+            "2026-11-26T09:00:00-01:00",
+            "2026-11-26T10:00:00z",
+            "2026-11-26T09:59:59.1234567Z",
+        ] {
+            let mut invalid = snapshot.clone();
+            *invalid.pointer_mut(pointer).expect("field exists") = json!(timestamp);
+            assert_eq!(
+                submit(address, invalid.to_string()).await.0,
+                400,
+                "{pointer} accepted {timestamp}"
+            );
+        }
+    }
     let duplicate_key = snapshot
         .to_string()
         .replacen('{', r#"{"sender":"other","#, 1);
@@ -376,6 +398,12 @@ async fn rejects_invalid_platform_syncs() {
     assert_eq!(counts(&pool).await, (0, 0, 0));
     report(address, &snapshot).await;
     assert_eq!(counts(&pool).await, (1, 1, 1));
+
+    let mut precise = snapshot;
+    for pointer in timestamp_fields {
+        *precise.pointer_mut(pointer).expect("field exists") = json!("2026-11-26T10:00:00.123456Z");
+    }
+    report(address, &precise).await;
 }
 
 // REQ-0056: a storage failure rolls back the entire sync and allows retry.

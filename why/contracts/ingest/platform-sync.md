@@ -63,10 +63,13 @@ platforms it preserves their case.
   The ledger stores only the latest completion for each sender and
   scope. A request with the same or an older completion for that sender
   and scope succeeds as a no-op. Reuse the original completion and
-  observation times on retry. Producers follow
-  [why:DEC-0027](https://github.com/please-behave/why/blob/main/why/decisions/DEC-0027.yaml)
-  and send up to six fractional digits. The request schema also accepts
-  explicit numeric offsets, which the ledger normalizes to UTC.
+  observation times on retry.
+
+`completed_at`, non-null `last_activity_at`, `committed_at` and
+`observed_at` must follow the shared timestamp convention in
+[why:DEC-0027](https://github.com/please-behave/why/blob/main/why/decisions/DEC-0027.yaml).
+Send RFC 3339 UTC with a literal `Z` suffix and up to six fractional
+digits. The ledger rejects numeric offsets, including `+00:00`.
 
 Inventory updates, omissions, heads and the heartbeat commit together.
 

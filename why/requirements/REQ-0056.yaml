@@ -11,3 +11,4 @@ rationale: >-
 decisions:
   - why:DEC-0007
   - why:DEC-0024
+  - why:DEC-0027
