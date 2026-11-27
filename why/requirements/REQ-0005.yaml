@@ -1,5 +1,6 @@
 id: REQ-0005
 name: Complete Attestations
+area: attestations
 description: >-
   The database must reject an attestation that lacks its sender, repository,
   commit, execution points, overall status, schema version or document, and a

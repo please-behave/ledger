@@ -1,5 +1,6 @@
 id: REQ-0017
 name: Attestation Read
+area: attestations
 description: >-
   `GET /v0/attestations/{id}` must return the attestation's summary and all of
   its results in their stored order.

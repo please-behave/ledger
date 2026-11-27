@@ -1,5 +1,6 @@
 id: REQ-0003
 name: Liveness Endpoint
+area: operations
 description: >-
   `GET /healthz` must answer with success whenever the service process runs,
   whether or not the database is reachable.

@@ -1,0 +1,34 @@
+id: COMP-0006
+name: Platform Facts and Repository Overview
+purpose: >-
+  Records platform syncs and derives the repository overview from them and from attestations.
+scope:
+  - >-
+    Validates and stores complete platform syncs atomically, keeping the inventory, heartbeats and distinct default-branch heads.
+  - >-
+    Reads one overview entry per inventory repository and per unmanaged attestation repository.
+  - >-
+    Derives each repository's status on read from heartbeats, sampled heads and check evidence.
+out_of_scope:
+  - description: Reading the thresholds from the environment.
+    owner: COMP-0001
+  - description: Routing and status codes of the overview and sync endpoints.
+    owner: COMP-0002
+must_not:
+  - >-
+    Store a derived status.
+  - >-
+    Store a platform sync partially.
+files:
+  - src/platform_facts.rs
+  - src/repository_overview.rs
+  - src/repository_overview.sql
+  - why/contracts/ingest/platform-sync.schema.json
+depends_on:
+  - COMP-0001
+requirements:
+  - REQ-0056
+  - REQ-0057
+  - REQ-0058
+  - REQ-0059
+  - REQ-0060

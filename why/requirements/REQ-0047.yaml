@@ -1,5 +1,6 @@
 id: REQ-0047
 name: Paged Release Lists
+area: releases
 description: >-
   The ledger must list the newest recorded release of each repository
   with releases and list the release history of a specified repository.

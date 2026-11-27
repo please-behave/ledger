@@ -1,5 +1,6 @@
 id: REQ-0015
 name: Latest Attestation per Combination
+area: attestations
 description: >-
   `GET /v0/attestations/latest` must return, for every combination of
   repository and execution points, its newest attestation as a summary, ordered

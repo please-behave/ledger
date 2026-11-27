@@ -1,5 +1,6 @@
 id: REQ-0049
 name: Attestation History by Repository
+area: attestations
 description: >-
   When `repository` is supplied to `GET /v0/attestations`, the ledger must
   page only through attestations whose stored repository identity exactly

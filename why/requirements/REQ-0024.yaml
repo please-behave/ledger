@@ -1,5 +1,6 @@
 id: REQ-0024
 name: Optional Rule Metadata on Ingest
+area: rules
 description: >-
   A result in an ingest envelope may omit rule metadata. If present, its
   rule metadata must satisfy the Attestation Envelope contract.

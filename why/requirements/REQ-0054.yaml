@@ -1,5 +1,6 @@
 id: REQ-0054
 name: Paged Current Deployments
+area: deployments
 description: >-
   The ledger must list the current deployment for each target owner, target
   name and subject repository, optionally restricted to one repository.

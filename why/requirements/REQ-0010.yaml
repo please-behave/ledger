@@ -1,5 +1,6 @@
 id: REQ-0010
 name: Attestation Ingest
+area: attestations
 description: >-
   `POST /v0/attestations` with a valid envelope must append the attestation
   and every one of its results and answer with `201` and the attestation's

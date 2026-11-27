@@ -1,0 +1,70 @@
+id: COMP-0002
+name: HTTP Service
+purpose: >-
+  Starts the ledger and exposes its HTTP API.
+scope:
+  - >-
+    Parses the command line and starts either the server or the migration run.
+  - >-
+    Routes every request of the ledger API and maps each outcome to its status code.
+  - >-
+    Parses request bodies, paths and query parameters and rejects malformed ones before any storage call.
+  - >-
+    Answers the liveness and readiness probes.
+out_of_scope:
+  - description: Validating the content of an ingested document.
+    owner: COMP-0003
+  - description: Storing and querying data.
+    owner: COMP-0007
+  - description: Reading the runtime settings from the environment.
+    owner: COMP-0001
+must_not:
+  - >-
+    Migrate the database when the service starts.
+  - >-
+    Make the liveness probe depend on the database.
+  - >-
+    Change stored data while serving a read.
+files:
+  - src/http.rs
+  - src/lib.rs
+  - src/main.rs
+depends_on:
+  - COMP-0001
+  - COMP-0003
+  - COMP-0004
+  - COMP-0005
+  - COMP-0006
+  - COMP-0007
+requirements:
+  - REQ-0001
+  - REQ-0002
+  - REQ-0003
+  - REQ-0004
+  - REQ-0010
+  - REQ-0011
+  - REQ-0015
+  - REQ-0017
+  - REQ-0018
+  - REQ-0019
+  - REQ-0021
+  - REQ-0022
+  - REQ-0027
+  - REQ-0029
+  - REQ-0030
+  - REQ-0033
+  - REQ-0038
+  - REQ-0039
+  - REQ-0040
+  - REQ-0041
+  - REQ-0043
+  - REQ-0046
+  - REQ-0047
+  - REQ-0048
+  - REQ-0049
+  - REQ-0050
+  - REQ-0052
+  - REQ-0054
+  - REQ-0055
+  - REQ-0056
+  - REQ-0059

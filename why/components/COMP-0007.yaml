@@ -1,0 +1,89 @@
+id: COMP-0007
+name: Persistence
+purpose: >-
+  Owns the database schema and every statement that stores or reads attestations, registrations and facts.
+scope:
+  - >-
+    Applies the forward-only migrations and reports whether the schema the build requires is present.
+  - >-
+    Appends attestations with their results and rule set bindings in one transaction and never updates them.
+  - >-
+    Stores rule and Rule Set registrations append-only and verifies Rule Set members against stored rules.
+  - >-
+    Stores release facts, deployment targets and deployment events, and resolves deployed versions through release facts at read time.
+  - >-
+    Serves the paged and filtered reads of attestations, rules, Rule Sets, releases, deployments and commit evidence.
+out_of_scope:
+  - description: Validating documents against the ingest contracts.
+    owner: COMP-0003
+  - description: Storing platform syncs and reading the repository overview.
+    owner: COMP-0006
+  - description: Routing and status codes.
+    owner: COMP-0002
+must_not:
+  - >-
+    Migrate when a connection is opened.
+  - >-
+    Update or delete a stored attestation.
+  - >-
+    Build a statement from request values other than through bound parameters.
+files:
+  - src/database.rs
+  - migrations/20261121000000_create_attestations.sql
+  - migrations/20261122000000_add_rule_identity.sql
+  - migrations/20261122000001_index_rule_identity_version.sql
+  - migrations/20261122000002_create_rule_registrations.sql
+  - migrations/20261125000000_create_rule_set_registrations.sql
+  - migrations/20261125000001_add_attestation_rule_sets.sql
+  - migrations/20261125000002_create_release_facts.sql
+  - migrations/20261126000000_create_deployment_targets.sql
+  - migrations/20261126000001_create_deployment_events.sql
+  - migrations/20261126000002_index_current_deployment.sql
+  - migrations/20261126000003_create_platform_facts.sql
+depends_on:
+  - COMP-0003
+  - COMP-0004
+  - COMP-0005
+requirements:
+  - REQ-0001
+  - REQ-0002
+  - REQ-0004
+  - REQ-0005
+  - REQ-0006
+  - REQ-0007
+  - REQ-0008
+  - REQ-0009
+  - REQ-0012
+  - REQ-0013
+  - REQ-0014
+  - REQ-0015
+  - REQ-0016
+  - REQ-0017
+  - REQ-0019
+  - REQ-0020
+  - REQ-0021
+  - REQ-0025
+  - REQ-0026
+  - REQ-0028
+  - REQ-0029
+  - REQ-0030
+  - REQ-0031
+  - REQ-0032
+  - REQ-0034
+  - REQ-0035
+  - REQ-0037
+  - REQ-0038
+  - REQ-0039
+  - REQ-0040
+  - REQ-0041
+  - REQ-0042
+  - REQ-0044
+  - REQ-0045
+  - REQ-0046
+  - REQ-0047
+  - REQ-0048
+  - REQ-0049
+  - REQ-0051
+  - REQ-0053
+  - REQ-0054
+  - REQ-0055

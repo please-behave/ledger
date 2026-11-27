@@ -1,5 +1,6 @@
 id: REQ-0028
 name: Verify Rule Results on Read
+area: rules
 description: >-
   The ledger must report verification for every result in an attestation detail
   read. A result with a registration for the same rule source, path, local ID

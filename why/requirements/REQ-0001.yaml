@@ -1,5 +1,6 @@
 id: REQ-0001
 name: Migration Only by Subcommand
+area: operations
 description: >-
   The ledger must change its database schema only through the `migrate`
   subcommand and never when the service starts.

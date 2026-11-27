@@ -1,5 +1,6 @@
 id: REQ-0057
 name: Reconcile Repository Inventory and Sync Heartbeats
+area: platform
 description: >-
   The ledger must keep one inventory row per repository, using the normalized
   identity of attestations qualified by platform and host. It must store the

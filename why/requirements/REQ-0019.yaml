@@ -1,5 +1,6 @@
 id: REQ-0019
 name: Reads Change Nothing
+area: attestations
 description: >-
   Reading attestations through the API must not change any stored data.
 rationale: >-

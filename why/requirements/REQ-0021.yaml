@@ -1,5 +1,6 @@
 id: REQ-0021
 name: Paged Attestation History
+area: attestations
 description: >-
   `GET /v0/attestations` must return matching attestation summaries ordered by
   identifier from greatest to smallest, at most `limit` at a time, starting

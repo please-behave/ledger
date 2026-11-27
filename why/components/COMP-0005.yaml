@@ -1,0 +1,34 @@
+id: COMP-0005
+name: Release and Deployment Facts
+purpose: >-
+  Validates release facts, deployment target registrations and deployment facts before they are stored.
+scope:
+  - >-
+    Validates release facts, including that a GitHub OIDC sender reports only for its own repository.
+  - >-
+    Validates deployment target registration batches against the bundled schema.
+  - >-
+    Validates deployment facts and the outcome that is recorded for them.
+out_of_scope:
+  - description: Storing facts and resolving a deployed version to its release.
+    owner: COMP-0007
+  - description: Checking that a reporting sender registered the target.
+    owner: COMP-0007
+must_not:
+  - >-
+    Accept a release fact whose sender reports for another repository.
+  - >-
+    Accept a field that the contract does not define.
+files:
+  - src/deployment_fact.rs
+  - src/release_fact.rs
+  - src/target_registration.rs
+  - why/contracts/ingest/deployment-fact.schema.json
+  - why/contracts/ingest/target-registration.schema.json
+depends_on:
+  - COMP-0003
+  - COMP-0004
+requirements:
+  - REQ-0043
+  - REQ-0050
+  - REQ-0052

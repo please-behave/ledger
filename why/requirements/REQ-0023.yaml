@@ -1,5 +1,6 @@
 id: REQ-0023
 name: Canonical Rule Digest
+area: rules
 description: >-
   The ledger must compute the same rule digest for canonically equivalent
   inputs and a different digest when any covered field changes its canonical

@@ -1,5 +1,6 @@
 id: REQ-0060
 name: Derive Repository Status on Read
+area: platform
 description: >-
   The ledger must derive repository status on read from covering sync
   heartbeats, sampled default-branch heads and check evidence for those

@@ -1,5 +1,6 @@
 id: REQ-0029
 name: Paged Registered Rules
+area: rules
 description: >-
   The ledger must provide a paged read of registered rules that returns each
   source, path and ID once, with the numerically greatest registered version

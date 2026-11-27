@@ -1,5 +1,6 @@
 id: REQ-0032
 name: Stored Rule Identity on Attestation Results
+area: rules
 description: >-
   An attestation detail read must include each result's stored rule source,
   path and local ID as a rule identity, with its version when stored. The

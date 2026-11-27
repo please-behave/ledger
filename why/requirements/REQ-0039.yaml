@@ -1,5 +1,6 @@
 id: REQ-0039
 name: Registered Rule Set Version History
+area: rule-sets
 description: >-
   The ledger must return every registered version of a Rule Set identified by
   source, path and ID in ascending numeric version order. Each version carries

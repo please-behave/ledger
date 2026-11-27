@@ -1,5 +1,6 @@
 id: REQ-0037
 name: Store Bound Rule Sets with the Attestation
+area: rule-sets
 description: >-
   The ledger must store each reported binding's identity, version and execution
   points with the attestation in the same transaction as its results. It must

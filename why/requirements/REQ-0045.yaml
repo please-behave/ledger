@@ -1,5 +1,6 @@
 id: REQ-0045
 name: Preserve Attestation Authentication Method
+area: attestations
 description: >-
   The ledger must accept an optional authentication method from the gateway
   alongside the authenticated sender of an attestation, and preserve it in the

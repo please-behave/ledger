@@ -1,5 +1,6 @@
 id: REQ-0008
 name: Rule Result Values
+area: attestations
 description: >-
   The database must reject a rule result whose kind is not check, review or
   integrity, or whose status is not PASS, FAIL, ERROR, NOT_RUN or WARN.

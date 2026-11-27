@@ -1,5 +1,6 @@
 id: REQ-0035
 name: Verify Every Rule Set Member Before Registration
+area: rule-sets
 description: >-
   The ledger must reject a Rule Set version if any member rule version is
   unregistered or has a different registered digest. It must report every

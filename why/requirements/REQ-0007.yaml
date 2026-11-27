@@ -1,5 +1,6 @@
 id: REQ-0007
 name: Overall Status Values
+area: attestations
 description: >-
   The database must reject an attestation whose overall status is not PASS,
   FAIL or ERROR.

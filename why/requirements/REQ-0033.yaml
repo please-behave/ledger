@@ -1,5 +1,6 @@
 id: REQ-0033
 name: Validate Bounded Rule Set Registration Batches
+area: rule-sets
 description: >-
   The ledger must validate the complete Rule Set registration request against
   the ingest contract before storing any registration.

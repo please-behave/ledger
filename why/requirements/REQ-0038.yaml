@@ -1,5 +1,6 @@
 id: REQ-0038
 name: Paged Registered Rule Sets
+area: rule-sets
 description: >-
   The ledger must provide a paged read of registered Rule Sets that returns each
   source, path and ID once, with the numerically greatest registered version,

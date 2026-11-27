@@ -1,5 +1,6 @@
 id: REQ-0016
 name: Warning and Not-run Counts
+area: attestations
 description: >-
   The summary of an attestation must state how many of its results have the
   status `WARN` and how many have the status `NOT_RUN`.

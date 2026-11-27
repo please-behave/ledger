@@ -1,5 +1,6 @@
 id: REQ-0002
 name: Idempotent Migration
+area: operations
 description: >-
   The `migrate` subcommand must create the complete schema on an empty
   database and succeed without further change when run again. On success it

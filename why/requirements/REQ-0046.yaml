@@ -1,5 +1,6 @@
 id: REQ-0046
 name: Commit Evidence
+area: attestations
 description: >-
   For a repository and commit, the ledger must select the newest attestation
   containing check by receipt time and then by greater attestation ID, or

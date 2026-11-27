@@ -1,5 +1,6 @@
 id: REQ-0006
 name: Commit Format
+area: attestations
 description: >-
   The database must reject an attestation whose commit is not 40 or 64
   hexadecimal characters.

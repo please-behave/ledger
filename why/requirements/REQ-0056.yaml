@@ -1,5 +1,6 @@
 id: REQ-0056
 name: Validate Internal Platform Syncs
+area: platform
 description: >-
   The ledger must accept complete platform syncs from trusted collectors
   through its versioned internal ingest contract. It must reject invalid

@@ -1,5 +1,6 @@
 id: REQ-0013
 name: Evidence Stored as Received
+area: attestations
 description: >-
   The ledger must store the received envelope unchanged as JSON together with
   the attestation.

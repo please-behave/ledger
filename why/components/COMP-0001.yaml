@@ -1,0 +1,24 @@
+id: COMP-0001
+name: Service Configuration
+purpose: >-
+  Reads the ledger's runtime settings from the environment and rejects invalid ones at start.
+scope:
+  - >-
+    Reads the database URL and the listen address from environment variables.
+  - >-
+    Reads and validates the thresholds that govern the derived repository status.
+out_of_scope:
+  - description: Deriving a repository's status from those thresholds.
+    owner: COMP-0006
+  - description: Connecting to the database.
+    owner: COMP-0007
+must_not:
+  - >-
+    Fall back to a default for the database URL.
+  - >-
+    Accept a threshold that is not a valid positive duration.
+files:
+  - src/config.rs
+depends_on: []
+requirements:
+  - REQ-0060

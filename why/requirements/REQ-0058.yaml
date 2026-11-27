@@ -1,5 +1,6 @@
 id: REQ-0058
 name: Append Distinct Repository Head Observations
+area: platform
 description: >-
   The ledger must append a reported default-branch head if no strictly earlier
   observation is stored for the same qualified repository and branch, or if its

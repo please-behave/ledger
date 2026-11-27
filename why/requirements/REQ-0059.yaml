@@ -1,5 +1,6 @@
 id: REQ-0059
 name: Read the Repository Overview
+area: platform
 description: >-
   The ledger must serve one overview entry per non-archived inventory
   repository and one unmanaged entry per attestation repository absent

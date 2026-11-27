@@ -1,5 +1,6 @@
 id: REQ-0044
 name: Preserve the First Release Fact
+area: releases
 description: >-
   The ledger must store the first release fact for a repository and version
   with its commit, authenticated sender, authentication method and receipt

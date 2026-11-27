@@ -1,5 +1,6 @@
 id: REQ-0051
 name: Preserve the First Deployment Target Registration
+area: deployments
 description: >-
   The ledger must register deployment targets by authenticated sender and name,
   returning an outcome for each submitted target and preserving the first

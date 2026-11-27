@@ -1,0 +1,32 @@
+id: COMP-0004
+name: Rule Registry
+purpose: >-
+  Computes rule digests and validates rule and Rule Set registrations.
+scope:
+  - >-
+    Computes the canonical rule digest from the covered fields of a rule.
+  - >-
+    Validates bounded batches of rule registrations and derives each rule's digest.
+  - >-
+    Validates bounded batches of Rule Set registrations against the bundled schema.
+out_of_scope:
+  - description: Storing registrations and verifying Rule Set members against stored rules.
+    owner: COMP-0007
+  - description: Validating the rule metadata of an attestation.
+    owner: COMP-0003
+must_not:
+  - >-
+    Produce the same digest for inputs that differ in a covered field.
+  - >-
+    Accept a registration that exceeds the contract bounds.
+files:
+  - src/registration.rs
+  - src/rule_digest.rs
+  - src/rule_set_registration.rs
+  - why/contracts/ingest/rule-set-registration.schema.json
+depends_on:
+  - COMP-0003
+requirements:
+  - REQ-0023
+  - REQ-0027
+  - REQ-0033

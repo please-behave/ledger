@@ -1,5 +1,6 @@
 id: REQ-0055
 name: Deployment Reads with Commit Evidence
+area: deployments
 description: >-
   The ledger must resolve a deployed version through its repository's
   release fact at read time and use a reported commit directly. For a

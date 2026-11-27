@@ -1,5 +1,6 @@
 id: REQ-0018
 name: Unknown and Malformed Identifiers
+area: attestations
 description: >-
   `GET /v0/attestations/{id}` must answer with `404` when no attestation has
   the identifier and with `400` when the identifier is not a UUID.

@@ -1,5 +1,6 @@
 id: REQ-0048
 name: Release Reads with Commit Evidence
+area: releases
 description: >-
   The ledger must read a release by repository and version. Every release
   read must return the recorded version, commit, receipt time, sender and

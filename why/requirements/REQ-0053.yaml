@@ -1,5 +1,6 @@
 id: REQ-0053
 name: Record Changes to the Current Deployment
+area: deployments
 description: >-
   For each registered target and subject repository, the ledger must append
   a deployment event with the reported version or commit, authenticated

@@ -1,5 +1,6 @@
 id: REQ-0020
 name: Result Count
+area: attestations
 description: >-
   The summary of an attestation must state how many results the attestation
   holds.

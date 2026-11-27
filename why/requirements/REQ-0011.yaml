@@ -1,5 +1,6 @@
 id: REQ-0011
 name: Invalid Ingest Rejected
+area: attestations
 description: >-
   `POST /v0/attestations` must answer with `400` and store nothing when the
   body is not a valid envelope, contains an unknown field or violates a

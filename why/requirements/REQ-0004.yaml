@@ -1,5 +1,6 @@
 id: REQ-0004
 name: Readiness Reflects the Schema
+area: operations
 description: >-
   `GET /readyz` must answer with success only when the database is reachable
   and every migration that the running build requires is applied, and with a

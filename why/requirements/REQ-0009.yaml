@@ -1,5 +1,6 @@
 id: REQ-0009
 name: Rule Result Integrity
+area: attestations
 description: >-
   The database must reject a rule result that belongs to no stored attestation
   and a second rule result at a position that an attestation already uses.

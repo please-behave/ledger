@@ -1,5 +1,6 @@
 id: REQ-0042
 name: Bound Rule Sets on Attestation Reads
+area: rule-sets
 description: >-
   The attestation detail read must return the stored Rule Set bindings in their
   reported order, including each binding's source, path, ID, version and

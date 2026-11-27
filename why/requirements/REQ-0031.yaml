@@ -1,5 +1,6 @@
 id: REQ-0031
 name: Registered Rule Name on Attestation Results
+area: rules
 description: >-
   The ledger must include the stored name of the registration matching a
   result's rule source, path, local ID and version in an attestation detail

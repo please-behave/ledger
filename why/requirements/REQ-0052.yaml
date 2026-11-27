@@ -1,5 +1,6 @@
 id: REQ-0052
 name: Validate Deployment Fact Submissions
+area: deployments
 description: >-
   The ledger must reject deployment reports that violate the ingest contract
   or name a target the authenticated sender has not registered.

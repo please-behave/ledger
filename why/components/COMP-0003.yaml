@@ -1,0 +1,33 @@
+id: COMP-0003
+name: Attestation Ingest
+purpose: >-
+  Validates attestation envelopes against the ingest contract before they are stored.
+scope:
+  - >-
+    Validates an envelope against the bundled attestation schema and rejects unknown fields.
+  - >-
+    Provides the shared format checks for commits, versions, rule identities and the authentication method.
+out_of_scope:
+  - description: Storing an attestation and its results.
+    owner: COMP-0007
+  - description: Registering rule definitions and Rule Sets.
+    owner: COMP-0004
+must_not:
+  - >-
+    Alter the received document.
+  - >-
+    Accept a field that the contract does not define.
+files:
+  - src/attestation.rs
+  - why/contracts/ingest/attestation.schema.json
+depends_on: []
+requirements:
+  - REQ-0005
+  - REQ-0006
+  - REQ-0007
+  - REQ-0008
+  - REQ-0011
+  - REQ-0013
+  - REQ-0024
+  - REQ-0036
+  - REQ-0045

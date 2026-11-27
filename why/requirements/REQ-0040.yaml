@@ -1,5 +1,6 @@
 id: REQ-0040
 name: Rule Set Compliance by Repository
+area: rule-sets
 description: >-
   For a Rule Set identity, the ledger must report each repository and version
   bound at `check` in that repository's newest attestation containing `check`.

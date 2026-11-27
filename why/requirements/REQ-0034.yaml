@@ -1,5 +1,6 @@
 id: REQ-0034
 name: Append-only Rule Set Registrations
+area: rule-sets
 description: >-
   For each Rule Set with valid members, the ledger must keep the first
   registration for a source, path, ID and version, together with its members,

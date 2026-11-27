@@ -7,10 +7,11 @@ This directory holds the Why of the ledger: its requirements, decisions and API 
 | Artifact | Purpose |
 |---|---|
 | **[Requirement](requirements/README.md)** | A binding, verifiable condition the ledger must satisfy. |
+| **[Component](components/README.md)** | A cohesive part of the compiled product with one responsibility, its files and its boundaries. |
 | **Decision** | A significant architectural choice with its context and rationale. |
 | **[API Contract](contracts/README.md)** | An interface, its compatibility boundary and exact obligations. |
 
-The [Why standard](https://github.com/please-behave/why/tree/main/standard) defines the permitted structure of each kind. Requirements and decisions are one `REQ-NNNN.yaml` or `DEC-NNNN.yaml` file each, named after their ID. IDs are permanent and never reused.
+The [Why standard](https://github.com/please-behave/why/tree/main/standard) defines the permitted structure of each kind. Requirements, decisions and components are one `REQ-NNNN.yaml`, `DEC-NNNN.yaml` or `COMP-NNNN.yaml` file each, named after their ID. IDs are permanent and never reused.
 
 ## References
 
@@ -18,6 +19,7 @@ References are recorded in one direction, from the more volatile artifact to the
 
 - a contract names the requirements it specifies,
 - a requirement names the decisions that shaped it,
+- a component names the requirements it implements and the components it depends on,
 - a decision names only the decisions it supersedes.
 
 A requirement may also cite a decision of another repository by qualifying its ID with the alias that [`repositories.yaml`](repositories.yaml) declares for it, as in `why:DEC-0002`.

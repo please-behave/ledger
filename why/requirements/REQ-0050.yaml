@@ -1,5 +1,6 @@
 id: REQ-0050
 name: Validate Deployment Target Registration Batches
+area: deployments
 description: >-
   The ledger must validate the entire deployment target registration batch
   against the ingest contract before storing any target.
